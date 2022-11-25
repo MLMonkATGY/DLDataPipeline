@@ -11,6 +11,7 @@ from zipfile import ZipFile
 import os
 from tqdm import tqdm
 from joblib import Parallel, delayed
+from GenLabels import GenLabels
 
 
 def genFilename(row):
@@ -134,13 +135,15 @@ def ExtractTrainTestData(cfg: ConfigParams):
 
 @hydra.main(version_base=None, config_name="de_config")
 def my_app(cfg: ConfigParams) -> None:
-    imgDfPath = generate_df(cfg)
-    # imgDfPath = (
-    #     "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/valid_img_ds.parquet"
-    # )
-    ExtractImgFromZip(imgDfPath, cfg)
-    CompressDataset(cfg)
-    ExtractTrainTestData(cfg)
+    # imgDfPath = generate_df(cfg)
+    imgDfPath = (
+        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/valid_img_ds.parquet"
+    )
+    # ExtractImgFromZip(imgDfPath, cfg)
+    # CompressDataset(cfg)
+    # ExtractTrainTestData(cfg)
+    for viewName in cfg.targetDocDesc:
+        GenLabels(cfg, imgDfPath, viewName)
 
 
 if __name__ == "__main__":

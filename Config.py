@@ -32,6 +32,9 @@ class ConfigParams:
         ]
     )
     extractionWorker: int = 5
+    rawPartlistGroup: str = "/home/alextay96/Desktop/new_workspace/partlist_prediction/data/processed/best_2/partlist_3lvl_2.parquet"
+    imgAngleTopartMap: str = "/home/alextay96/Desktop/new_workspace/partlist_prediction/data/processed/best_2/angle.json"
+    outputLabelDir: str = "train_test_labels"
 
 
 cs = ConfigStore.instance()
