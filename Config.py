@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List
 from hydra.core.config_store import ConfigStore
 import logging
 
@@ -12,6 +13,17 @@ class ConfigParams:
     )
     fileDfpath: str = "/home/alextay96/Deep_Learning_Data/raw_src/file_metadata.parquet"
     datasetName: str = "dmg_vision_dataset"
+
+    targetDocDesc: list[str] = field(
+        default_factory=lambda: [
+            "Front View",
+            "Rear View",
+            "Front View Left",
+            "Front View Right",
+            "Rear View Left",
+            "Rear View Right",
+        ]
+    )
 
 
 cs = ConfigStore.instance()
