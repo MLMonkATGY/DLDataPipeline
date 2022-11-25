@@ -13,7 +13,14 @@ class ConfigParams:
     )
     fileDfpath: str = "/home/alextay96/Deep_Learning_Data/raw_src/file_metadata.parquet"
     datasetName: str = "dmg_vision_dataset"
+    imgSrcDir: str = "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/temp"
+    imgSinkDir: str = (
+        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/raw_img"
+    )
+    trainTestDataDir: str = "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data"
+    trainTestDataFilename: str = "train_test_data.zip"
 
+    targetVehicleType: str = "Saloon - 4 Dr"
     targetDocDesc: list[str] = field(
         default_factory=lambda: [
             "Front View",
@@ -24,6 +31,7 @@ class ConfigParams:
             "Rear View Right",
         ]
     )
+    extractionWorker: int = 5
 
 
 cs = ConfigStore.instance()
