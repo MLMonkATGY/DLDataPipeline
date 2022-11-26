@@ -1,6 +1,9 @@
 .vscode
 *.pyc
-data/
+data/**
 *.csv
 *.parquet
 outputs/
+mlruns/
+.pytest_cache
+__pycache__

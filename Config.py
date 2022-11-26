@@ -6,18 +6,18 @@ import logging
 
 @dataclass
 class ConfigParams:
-    srcDataInputDir: str = "/home/alextay96/Deep_Learning_Data/raw_src"
+    srcDataInputDir: str = (
+        "/run/user/1000/gvfs/smb-share:server=192.168.1.4,share=d$/batch_download"
+    )
     writeOutputDir: str = "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data"
-    caseDfPath: str = (
-        "/home/alextay96/Deep_Learning_Data/raw_src/complete_encoded_no_limit.parquet"
-    )
-    fileDfpath: str = "/home/alextay96/Deep_Learning_Data/raw_src/file_metadata.parquet"
+    caseDfPath: str = "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/raw_src/complete_encoded_no_limit.parquet"
+    fileDfpath: str = "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/raw_src/file_metadata.parquet"
     datasetName: str = "dmg_vision_dataset"
-    imgSrcDir: str = "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/temp"
-    imgSinkDir: str = (
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/raw_img"
+    imgSrcDir: str = (
+        "/run/user/1000/gvfs/smb-share:server=192.168.1.4,share=d$/batch_download"
     )
-    trainTestDataDir: str = "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data"
+    imgSinkDir: str = "/home/alextay96/Deep_Learning_Data/mrm_imgs"
+    trainTestDataDir: str = "/home/alextay96/Deep_Learning_Data/mrm_imgs_remote_sink"
     trainTestDataFilename: str = "train_test_data.zip"
 
     targetVehicleType: str = "Saloon - 4 Dr"
@@ -31,7 +31,7 @@ class ConfigParams:
             "Rear View Right",
         ]
     )
-    extractionWorker: int = 5
+    extractionWorker: int = 8
     rawPartlistGroup: str = "/home/alextay96/Desktop/new_workspace/partlist_prediction/data/processed/best_2/partlist_3lvl_2.parquet"
     imgAngleTopartMap: str = "/home/alextay96/Desktop/new_workspace/partlist_prediction/data/processed/best_2/angle.json"
     outputLabelDir: str = "train_test_labels"

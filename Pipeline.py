@@ -88,6 +88,7 @@ def ExtractWorker(cfg: ConfigParams, caseId: int, df: pd.DataFrame):
 
 
 def ExtractImgFromZip(dfPath: str, cfg: ConfigParams):
+    log.info("Start Extraction Process")
     srcImgDir = pathlib.Path(cfg.imgSrcDir)
     allZipFile = glob.glob(cfg.imgSrcDir + "**/*.zip", recursive=True)
     allCaseId = [int(x.split("/")[-1].split(".")[0]) for x in allZipFile]
@@ -105,12 +106,12 @@ def ExtractImgFromZip(dfPath: str, cfg: ConfigParams):
     allCaseIdToExtract = df["CaseID"].unique().tolist()
     Parallel(n_jobs=cfg.extractionWorker)(
         delayed(ExtractWorker)(cfg=cfg, caseId=caseId, df=df)
-        for caseId in allCaseIdToExtract
+        for caseId in tqdm(allCaseIdToExtract, desc="Extracting imgs")
     )
 
 
 def CompressDataset(cfg: ConfigParams):
-
+    log.info("Start Compression Dataset")
     imgSrcDir = cfg.imgSinkDir
     outputDir = pathlib.Path(cfg.trainTestDataDir)
     zip_name = outputDir / f"{cfg.trainTestDataFilename}"
@@ -127,6 +128,7 @@ def CompressDataset(cfg: ConfigParams):
 
 
 def ExtractTrainTestData(cfg: ConfigParams):
+    log.info("Start Extraction Dataset")
 
     outputDir = pathlib.Path(cfg.trainTestDataDir)
     zip_name = outputDir / f"{cfg.trainTestDataFilename}"
@@ -135,25 +137,27 @@ def ExtractTrainTestData(cfg: ConfigParams):
         zip_ref.extractall(outputDir / "train_test_img")
 
 
-@hydra.main(version_base=None, config_name="de_config")
-def my_app(cfg: ConfigParams) -> None:
-    # imgDfPath = generate_df(cfg)
-    imgDfPath = (
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/valid_img_ds.parquet"
-    )
-    # ExtractImgFromZip(imgDfPath, cfg)
-    # CompressDataset(cfg)
-    # ExtractTrainTestData(cfg)
-    allLabelPath = []
+def getAllParts(cfg: ConfigParams):
     with open(cfg.imgAngleTopartMap, "r") as f:
         allpartMap = json.load(f)
     allPart = set([x for k, v in allpartMap.items() for x in v])
+    return allPart
+
+
+@hydra.main(version_base=None, config_name="de_config")
+def my_app(cfg: ConfigParams) -> None:
+    imgDfPath = generate_df(cfg)
+    ExtractImgFromZip(imgDfPath, cfg)
+    CompressDataset(cfg)
+    ExtractTrainTestData(cfg)
+    allLabelPath = []
+    allPart = getAllParts(cfg)
     for viewName in cfg.targetDocDesc:
         labelPath = GenLabels(cfg, imgDfPath, viewName)
         allLabelPath.append(labelPath)
 
-    # labeldf = readAndCombineDf(allLabelPath)
-    # viewData(labeldf, allPart, cfg)
+    labeldf = readAndCombineDf(allLabelPath)
+    viewData(labeldf, allPart, cfg)
 
 
 if __name__ == "__main__":
