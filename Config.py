@@ -17,7 +17,12 @@ class ConfigParams:
         "/run/user/1000/gvfs/smb-share:server=192.168.1.4,share=d$/batch_download"
     )
     imgSinkDir: str = "/home/alextay96/Deep_Learning_Data/mrm_imgs"
-    trainTestDataDir: str = "/home/alextay96/Deep_Learning_Data/mrm_imgs_remote_sink"
+    trainTestDataDir: str = (
+        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/train_test_img"
+    )
+    compressImgPath: str = (
+        "/home/alextay96/Deep_Learning_Data/mrm_imgs_remote_sink/train_test_data.zip"
+    )
     trainTestDataFilename: str = "train_test_data.zip"
 
     targetVehicleType: str = "Saloon - 4 Dr"

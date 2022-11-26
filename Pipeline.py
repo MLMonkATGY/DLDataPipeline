@@ -89,7 +89,6 @@ def ExtractWorker(cfg: ConfigParams, caseId: int, df: pd.DataFrame):
 
 def ExtractImgFromZip(dfPath: str, cfg: ConfigParams):
     log.info("Start Extraction Process")
-    srcImgDir = pathlib.Path(cfg.imgSrcDir)
     allZipFile = glob.glob(cfg.imgSrcDir + "**/*.zip", recursive=True)
     allCaseId = [int(x.split("/")[-1].split(".")[0]) for x in allZipFile]
     table = pq.read_table(
@@ -112,18 +111,18 @@ def ExtractImgFromZip(dfPath: str, cfg: ConfigParams):
 
 def CompressDataset(cfg: ConfigParams):
     log.info("Start Compression Dataset")
-    imgSrcDir = cfg.imgSinkDir
-    outputDir = pathlib.Path(cfg.trainTestDataDir)
-    zip_name = outputDir / f"{cfg.trainTestDataFilename}"
-
-    with ZipFile(zip_name, "w") as zip_ref:
+    compressCheck = False
+    with ZipFile(cfg.compressImgPath, "w") as zip_ref:
         for folder_name, subfolders, filenames in tqdm(
-            os.walk(imgSrcDir), desc="zipping files"
+            os.walk(cfg.imgSinkDir), desc="zipping files"
         ):
             for filename in filenames:
                 file_path = os.path.join(folder_name, filename)
-                zip_ref.write(file_path, arcname=os.path.relpath(file_path, imgSrcDir))
-
+                zip_ref.write(
+                    file_path, arcname=os.path.relpath(file_path, cfg.imgSinkDir)
+                )
+                compressCheck = True
+    assert compressCheck is True
     zip_ref.close()
 
 
@@ -131,10 +130,10 @@ def ExtractTrainTestData(cfg: ConfigParams):
     log.info("Start Extraction Dataset")
 
     outputDir = pathlib.Path(cfg.trainTestDataDir)
-    zip_name = outputDir / f"{cfg.trainTestDataFilename}"
-    os.makedirs(outputDir / "train_test_img", exist_ok=True)
-    with ZipFile(zip_name, "r") as zip_ref:
-        zip_ref.extractall(outputDir / "train_test_img")
+    os.makedirs(outputDir, exist_ok=True)
+    assert os.path.exists(cfg.compressImgPath)
+    with ZipFile(cfg.compressImgPath, "r") as zip_ref:
+        zip_ref.extractall(outputDir)
 
 
 def getAllParts(cfg: ConfigParams):
@@ -146,8 +145,11 @@ def getAllParts(cfg: ConfigParams):
 
 @hydra.main(version_base=None, config_name="de_config")
 def my_app(cfg: ConfigParams) -> None:
-    imgDfPath = generate_df(cfg)
-    ExtractImgFromZip(imgDfPath, cfg)
+    # imgDfPath = generate_df(cfg)
+    imgDfPath = (
+        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/valid_img_ds.parquet"
+    )
+    # ExtractImgFromZip(imgDfPath, cfg)
     CompressDataset(cfg)
     ExtractTrainTestData(cfg)
     allLabelPath = []

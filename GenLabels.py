@@ -25,20 +25,13 @@ def GenLabels(cfg: ConfigParams, imgDfPath: str, viewAngle: str):
     print(validImgDf.columns)
     vTypeName = cfg.targetVehicleType.replace(" ", "")
     baseOutputDir = pathlib.Path(cfg.writeOutputDir)
+
     searchStr = f"{cfg.trainTestDataDir}/**/*.JPG"
     allImgs = glob.glob(searchStr, recursive=True)
     allLocalCaseId = set([int(x.split("/")[-1].split("_")[0]) for x in allImgs])
     partlistDf = partlistDf[partlistDf["CaseID"].isin(allLocalCaseId)]
     labelDir = baseOutputDir / cfg.outputLabelDir
     os.makedirs(labelDir, exist_ok=True)
-    # print(len(allLocalCaseId))
-    # partlisDfCountDf = (
-    #     partlistDf.groupby("lvl_3_desc")["CaseID"]
-    #     .apply(set)
-    #     .reset_index()
-    #     .rename(columns={"lvl_3_desc": "visible_part"})
-    # )
-    # partlisDfCountDf["count"] = partlisDfCountDf["CaseID"].apply(len)
 
     with open(cfg.imgAngleTopartMap, "r") as f:
         viewToPart = json.load(f)
