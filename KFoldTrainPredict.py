@@ -71,6 +71,12 @@ def GetDataloaders(trainFile, valFile):
                 min_width=trainParams.imgSize,
                 border_mode=0,
             ),
+            A.ColorJitter(p=0.2),
+            A.CoarseDropout(max_height=16, max_width=16, p=0.2),
+            A.GaussianBlur(blur_limit=(1, 5), p=0.2),
+            A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
+            A.GridDistortion(border_mode=0, p=0.2),
+            A.RandomGridShuffle(p=0.2),
             A.Normalize(),
             ToTensorV2(),
         ]
@@ -147,7 +153,7 @@ class ProcessModel(pl.LightningModule):
         self.save_hyperparameters()
 
     def configure_optimizers(self):
-        return torch.optim.SGD(self.model.parameters(), trainParams.learningRate)
+        return torch.optim.Adam(self.model.parameters(), trainParams.learningRate)
 
     def forward(self, imgs):
         logit = self.model(imgs)
@@ -271,11 +277,11 @@ def trainEval(trainFile, valFile, kfoldId):
         benchmark=True,
         precision=trainParams.trainingPrecision,
         logger=logger,
-        log_every_n_steps=30,
+        log_every_n_steps=50,
         callbacks=[checkpoint_callback],
         detect_anomaly=False,
-        limit_train_batches=1,
-        limit_val_batches=1,
+        # limit_train_batches=1,
+        # limit_val_batches=1,
         # limit_predict_batches=100,
     )
 
