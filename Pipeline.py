@@ -12,6 +12,8 @@ import os
 from tqdm import tqdm
 from joblib import Parallel, delayed
 from GenLabels import GenLabels
+from ViewData import readAndCombineDf, viewData
+import ujson as json
 
 
 def genFilename(row):
@@ -142,8 +144,16 @@ def my_app(cfg: ConfigParams) -> None:
     # ExtractImgFromZip(imgDfPath, cfg)
     # CompressDataset(cfg)
     # ExtractTrainTestData(cfg)
+    allLabelPath = []
+    with open(cfg.imgAngleTopartMap, "r") as f:
+        allpartMap = json.load(f)
+    allPart = set([x for k, v in allpartMap.items() for x in v])
     for viewName in cfg.targetDocDesc:
-        GenLabels(cfg, imgDfPath, viewName)
+        labelPath = GenLabels(cfg, imgDfPath, viewName)
+        allLabelPath.append(labelPath)
+
+    # labeldf = readAndCombineDf(allLabelPath)
+    # viewData(labeldf, allPart, cfg)
 
 
 if __name__ == "__main__":

@@ -63,6 +63,7 @@ def GenLabels(cfg: ConfigParams, imgDfPath: str, viewAngle: str):
             "Path": i,
         }
     allPayload = []
+    allGeneratedLabelPath = []
     for caseId in tqdm(partlistDf["CaseID"].unique()):
         if caseId not in localCaseImgMap.keys():
             continue
@@ -83,3 +84,4 @@ def GenLabels(cfg: ConfigParams, imgDfPath: str, viewAngle: str):
     outputLabelFilename = f"{labelDir}/{vTypeName}_{viewAngle}_img_label.csv"
     imgLabelDf.to_csv(outputLabelFilename)
     log.info(f"Successfully created label : {outputLabelFilename}")
+    return outputLabelFilename
