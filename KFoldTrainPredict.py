@@ -274,8 +274,8 @@ def trainEval(trainFile, valFile, kfoldId):
         log_every_n_steps=30,
         callbacks=[checkpoint_callback],
         detect_anomaly=False,
-        # limit_train_batches=3,
-        # limit_val_batches=3,
+        limit_train_batches=1,
+        limit_val_batches=1,
         # limit_predict_batches=100,
     )
 
@@ -330,7 +330,7 @@ def getAllPart():
 
 
 def GenerateNewRunForCrossValPred(allPreds: List, targetPart: str, imgAngle: str):
-    run_name = f"cross_val_pred_{targetPart}"
+    run_name = f"cv_pred_{imgAngle}_{targetPart}"
     outputDir = pathlib.Path(os.getcwd()) / "outputs"
     os.makedirs(outputDir, exist_ok=True)
     with mlflow.start_run(experiment_id=trainParams.expId, run_name=run_name):
