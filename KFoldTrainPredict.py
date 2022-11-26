@@ -329,16 +329,16 @@ def getAllPart():
     return allParts
 
 
-def GenerateNewRunForCrossValPred(allPreds: List, targetPart: str):
+def GenerateNewRunForCrossValPred(allPreds: List, targetPart: str, imgAngle: str):
     run_name = f"cross_val_pred_{targetPart}"
     outputDir = pathlib.Path(os.getcwd()) / "outputs"
     os.makedirs(outputDir, exist_ok=True)
     with mlflow.start_run(experiment_id=trainParams.expId, run_name=run_name):
         crossValPredDf = pd.json_normalize(allPreds)
-        outputName = f"{outputDir}/cross_val_pred_{targetPart}.csv"
+        outputName = f"{outputDir}/cv_pred_{imgAngle}_{targetPart}.csv"
         crossValPredDf.to_csv(outputName)
         mlflow.log_artifact(outputName)
-        print(f"Completed part {targetPart}")
+        print(f"Completed part {imgAngle} {targetPart}")
 
 
 if __name__ == "__main__":
@@ -386,4 +386,4 @@ if __name__ == "__main__":
 
                 predictions = trainEval(X_train, X_test, kfoldId + 1)
                 allPreds.extend(predictions)
-            GenerateNewRunForCrossValPred(allPreds, part)
+            GenerateNewRunForCrossValPred(allPreds, part, imgAngle)

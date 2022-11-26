@@ -87,12 +87,12 @@ def ExtractWorker(cfg: ConfigParams, caseId: int, df: pd.DataFrame):
         print(e1)
 
 
-def ExtractImgFromZip(dfPath: str, cfg: ConfigParams):
+def ExtractImgFromZip(cfg: ConfigParams):
     log.info("Start Extraction Process")
     allZipFile = glob.glob(cfg.imgSrcDir + "**/*.zip", recursive=True)
     allCaseId = [int(x.split("/")[-1].split(".")[0]) for x in allZipFile]
     table = pq.read_table(
-        dfPath,
+        cfg.validImgDsPath,
         columns=["CaseID", "Filename", "StdDocDesc", "Vehicle_Type"],
         filters=[
             ("CaseID", "in", allCaseId),
