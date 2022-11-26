@@ -20,11 +20,14 @@ import ujson as json
 @hydra.main(version_base=None, config_name="de_config")
 def Remote_DE(cfg: ConfigParams) -> None:
 
-    ExtractTrainTestData(cfg)
+    # ExtractTrainTestData(cfg)
+    log.info("Start getting images")
+    searchStr = f"{cfg.trainTestDataDir}/**/*.JPG"
+    allImgs = glob.glob(searchStr, recursive=True)
     allLabelPath = []
     allPart = getAllParts(cfg)
     for viewName in cfg.targetDocDesc:
-        labelPath = GenLabels(cfg, viewName)
+        labelPath = GenLabels(cfg, viewName, allImgs)
         allLabelPath.append(labelPath)
 
     labeldf = readAndCombineDf(allLabelPath)
