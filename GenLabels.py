@@ -19,9 +19,9 @@ from tqdm import tqdm
 from joblib import Parallel, delayed
 
 
-def GenLabels(cfg: ConfigParams, imgDfPath: str, viewAngle: str):
+def GenLabels(cfg: ConfigParams, viewAngle: str):
     partlistDf = pd.read_parquet(cfg.rawPartlistGroup)
-    validImgDf = pd.read_parquet(imgDfPath)
+    validImgDf = pd.read_parquet(cfg.validImgDsPath)
     print(validImgDf.columns)
     vTypeName = cfg.targetVehicleType.replace(" ", "")
     baseOutputDir = pathlib.Path(cfg.writeOutputDir)

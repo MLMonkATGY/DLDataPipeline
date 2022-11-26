@@ -22,7 +22,7 @@ def genFilename(row):
     return f"{caseID}_{dociD}.JPG"
 
 
-def generate_df(cfg: ConfigParams):
+def GenerateValidFileDf(cfg: ConfigParams):
     log.debug("Start process")
     baseOutputPath = pathlib.Path(cfg.writeOutputDir)
     caseDf = pd.read_parquet(cfg.caseDfPath)
@@ -144,23 +144,11 @@ def getAllParts(cfg: ConfigParams):
 
 
 @hydra.main(version_base=None, config_name="de_config")
-def my_app(cfg: ConfigParams) -> None:
-    # imgDfPath = generate_df(cfg)
-    imgDfPath = (
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/valid_img_ds.parquet"
-    )
-    # ExtractImgFromZip(imgDfPath, cfg)
+def Local_DE(cfg: ConfigParams) -> None:
+    GenerateValidFileDf(cfg)
+    ExtractImgFromZip(cfg)
     CompressDataset(cfg)
-    ExtractTrainTestData(cfg)
-    allLabelPath = []
-    allPart = getAllParts(cfg)
-    for viewName in cfg.targetDocDesc:
-        labelPath = GenLabels(cfg, imgDfPath, viewName)
-        allLabelPath.append(labelPath)
-
-    labeldf = readAndCombineDf(allLabelPath)
-    viewData(labeldf, allPart, cfg)
 
 
 if __name__ == "__main__":
-    my_app()
+    Local_DE()

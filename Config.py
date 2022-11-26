@@ -12,6 +12,9 @@ class ConfigParams:
     writeOutputDir: str = "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data"
     caseDfPath: str = "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/raw_src/complete_encoded_no_limit.parquet"
     fileDfpath: str = "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/raw_src/file_metadata.parquet"
+    validImgDsPath: str = (
+        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/valid_img_ds.parquet"
+    )
     datasetName: str = "dmg_vision_dataset"
     imgSrcDir: str = (
         "/run/user/1000/gvfs/smb-share:server=192.168.1.4,share=d$/batch_download"

@@ -46,7 +46,7 @@ from albumentations.pytorch.transforms import ToTensorV2
 import glob
 from cleanlab.classification import CleanLearning
 import pathlib
-from Pipeline import getAllParts
+from LocalPipeline import getAllParts
 import mlflow
 
 
