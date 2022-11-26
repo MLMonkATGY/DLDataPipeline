@@ -1,3 +1,4 @@
+from typing import List
 import pandas as pd
 import plotly.express as px
 import shutil
@@ -19,15 +20,13 @@ from tqdm import tqdm
 from joblib import Parallel, delayed
 
 
-def GenLabels(cfg: ConfigParams, viewAngle: str):
+def GenLabels(cfg: ConfigParams, viewAngle: str, allImgs: List[str]):
     partlistDf = pd.read_parquet(cfg.rawPartlistGroup)
     validImgDf = pd.read_parquet(cfg.validImgDsPath)
     print(validImgDf.columns)
     vTypeName = cfg.targetVehicleType.replace(" ", "")
     baseOutputDir = pathlib.Path(cfg.writeOutputDir)
 
-    searchStr = f"{cfg.trainTestDataDir}/**/*.JPG"
-    allImgs = glob.glob(searchStr, recursive=True)
     allLocalCaseId = set([int(x.split("/")[-1].split("_")[0]) for x in allImgs])
     partlistDf = partlistDf[partlistDf["CaseID"].isin(allLocalCaseId)]
     labelDir = baseOutputDir / cfg.outputLabelDir
@@ -41,10 +40,10 @@ def GenLabels(cfg: ConfigParams, viewAngle: str):
         "Filename"
     ].tolist()
     templatePayload = {x: 0 for x in targetPart}
-    allImgsInLocal = glob.glob(searchStr, recursive=True)
+    # allImgsInLocal = glob.glob(searchStr, recursive=True)
 
     localCaseImgMap = dict()
-    for i in allImgsInLocal:
+    for i in allImgs:
         filename = i.split("/")[-1]
         if filename not in allValidImgInAngle:
             continue
