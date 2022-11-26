@@ -1,1 +1,0 @@
-mlflow server --backend-store-uri sqlite:///data/mydb.sqlite
