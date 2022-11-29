@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=False)
 class TrainClassiferParams:
+    srcAnnFile: str
     imgSize: int
     trainBatchSize: int
     trainCPUWorker: int
@@ -25,23 +26,24 @@ class TrainClassiferParams:
 
 
 trainParams = TrainClassiferParams(
+    srcAnnFile="",
     runName="wheel",
     targetPart="wheel",
     imgAngle="",
     version=1,
-    imgSize=640,
-    trainBatchSize=64,
-    trainCPUWorker=6,
-    experimentName="clean_dataset",
-    expId=65,
+    imgSize=480,
+    trainBatchSize=40,
+    trainCPUWorker=8,
+    experimentName="dmg_multilabel",
+    expId=66,
     localSaveDir="mlruns",
-    saveTopNBest=2,
-    check_val_every_n_epoch=2,
+    saveTopNBest=3,
+    check_val_every_n_epoch=1,
     learningRate=1e-3,
     trainingPrecision=16,
     randomSeed=99,
     maxEpoch=10,
-    kFoldSplit=10,
+    kFoldSplit=5,
     not_dmg_label_count=0,
     dmg_label_count=0,
 )
