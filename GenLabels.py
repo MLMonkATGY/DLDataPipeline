@@ -43,16 +43,14 @@ def GenLabels(cfg: ConfigParams, viewAngle: str, allImgs: List[str]):
     # allImgsInLocal = glob.glob(searchStr, recursive=True)
 
     localCaseImgMap = dict()
-    for i in allImgs:
-        filename = i.split("/")[-1]
-        if filename not in allValidImgInAngle:
-            continue
+    for filename in tqdm(allValidImgInAngle):
+        path = f"{cfg.trainTestDataDir }/{filename}"
         caseId = int(filename.split("_")[0])
         localCaseImgMap[caseId] = {
             "CaseID": caseId,
             "ViewAngle": viewAngle,
             "Filename": filename,
-            "Path": i,
+            "Path": path,
         }
     allPayload = []
     allGeneratedLabelPath = []

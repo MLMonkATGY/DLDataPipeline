@@ -6,18 +6,6 @@ import shutil
 from tqdm import tqdm
 
 from Config import ConfigParams
-
-images_patt = "/path/to/images/*"
-removingPath = "/home/alextay96/.fiftyone/"
-if os.path.exists(removingPath):
-    shutil.rmtree(removingPath)
-# Ex: your custom label format
-import fiftyone as fo
-
-import ujson as json
-import fiftyone.core.fields as fof
-from fiftyone.core.view import DatasetView
-import fiftyone.core.odm as foo
 from pprint import pprint
 import time
 
@@ -31,6 +19,17 @@ def readAndCombineDf(allLabelPath: List[str]):
 
 
 def viewData(df: pd.DataFrame, allPart: List[str], cfg: ConfigParams):
+    images_patt = "/path/to/images/*"
+    removingPath = "/home/alextay96/.fiftyone/"
+    if os.path.exists(removingPath):
+        shutil.rmtree(removingPath)
+    # Ex: your custom label format
+    import fiftyone as fo
+
+    import ujson as json
+    import fiftyone.core.fields as fof
+    from fiftyone.core.view import DatasetView
+    import fiftyone.core.odm as foo
     samples = []
 
     # allSupportedparts = set([x for x in ])

@@ -14,17 +14,16 @@ from TrainClassifierParams import trainParams
 
 
 class DmgClassifierDataset(Dataset):
-    """Face Landmarks dataset."""
-
-    def __init__(self, csv_file, colName, transform=None, targetFile=[]):
-        """
-        Args:
-            csv_file (string): Path to the csv file with annotations.
-            root_dir (string): Directory with all the images.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
-        """
-        self.df = pd.read_csv(csv_file)
+    def __init__(
+        self,
+        csv_file,
+        colName,
+        transform=None,
+        targetFile=[],
+        targetDf: pd.DataFrame = None,
+    ):
+        if csv_file:
+            self.df = pd.read_csv(csv_file)
         # with open(trainParams.rejectFile, "r") as f:
         #     allRejFile = f.read().split("\n")
 
@@ -34,6 +33,8 @@ class DmgClassifierDataset(Dataset):
             # self.df = self.df[~self.df["Path"].isin(allRejFile)]
             # afterRemove = len(self.df)
             # print(f"Removed from reject file : {beforeRemove - afterRemove}")
+        if not targetDf.empty:
+            self.df = targetDf
         self.colName = colName
         # assert self.colName in csv_file
         self.transform = transform

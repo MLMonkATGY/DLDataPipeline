@@ -7,3 +7,5 @@ outputs/
 mlruns/
 .pytest_cache
 __pycache__
+models/
+cross_val_pred/
