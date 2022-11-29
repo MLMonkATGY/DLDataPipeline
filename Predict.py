@@ -320,7 +320,10 @@ def ReplacePredWithUnseen():
 
 def EnsembleWorker(caseIdList):
     predDf = pd.read_csv(
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/unseen_pred.csv"
+        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/raw_image_pred.csv"
+    )
+    predDf["CaseID"] = predDf["files"].apply(
+        lambda x: int(x.split("/")[-1].split("_")[0])
     )
 
     predDf = predDf[predDf["CaseID"].isin(caseIdList)]
@@ -355,8 +358,12 @@ def EnsembleWorker(caseIdList):
 
 def EnsemblePred():
     predDf = pd.read_csv(
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/unseen_pred.csv"
+        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/raw_image_pred.csv"
     )
+    predDf["CaseID"] = predDf["files"].apply(
+        lambda x: int(x.split("/")[-1].split("_")[0])
+    )
+
     allCaseId = predDf["CaseID"].unique().tolist()
     # allCaseId = allCaseId[:100]
     caseIdBatch = []
@@ -427,5 +434,5 @@ if __name__ == "__main__":
     # IntegrateCVPred()
     # GetCrossValPred()
     # ReplacePredWithUnseen()
-    # EnsemblePred()
+    EnsemblePred()
     EvalCaseAcc()
