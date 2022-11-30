@@ -19,6 +19,13 @@ import numpy as np
 import itertools
 import ast
 from joblib import Parallel, delayed
+from collections import Counter
+from sklearn.metrics import (
+    accuracy_score,
+    average_precision_score,
+    recall_score,
+    confusion_matrix,
+)
 
 
 def DownloadModels():
@@ -204,6 +211,39 @@ def GetCrossValPred():
             info = runs[0].info
             runId = info.run_id
             mlflow.artifacts.download_artifacts(run_id=runId, dst_path=outputModelDir)
+
+
+def GetMultilabelPred():
+    with open("./data/angle.json", "r") as f:
+        anglePartMap = json.load(f)
+    outputDir = pathlib.Path("./tmp/multilabel_pred")
+
+    for view, parts in tqdm(anglePartMap.items(), desc="angle"):
+        runName = f"cv_pred_{view}"
+        query = f"tags.`mlflow.runName`='{runName}'"
+        runs = MlflowClient().search_runs(
+            experiment_ids=["66"],
+            filter_string=query,
+            order_by=["attribute.start_time DESC"],
+            max_results=1,
+        )
+        info = runs[0].info
+        runId = info.run_id
+        mlflow.artifacts.download_artifacts(run_id=runId, dst_path=outputDir)
+
+
+def ReadMultiLabelDf():
+    search = "./tmp/multilabel_pred/**.csv"
+    allPredfile = glob.glob(search, recursive=True)
+    allDf = dict()
+    for p in allPredfile:
+        imgAngle = p.split("/")[-1].split(".")[0]
+        df = pd.read_csv(p)
+        df["file"] = df["file"].apply(lambda x: ast.literal_eval(x)[0])
+        df["CaseID"] = df["file"].apply(lambda x: int(x.split("/")[-1].split("_")[0]))
+        allDf[imgAngle] = df
+        print(df[["CaseID"]])
+    return allDf
 
 
 def transform_pred(predDf):
@@ -415,6 +455,123 @@ def EvalCaseAcc():
     print(perfBreakDownDf["caseAcc"].mean())
 
 
+def getAllPart():
+
+    allPartPath = "./data/all_part.json"
+    assert os.path.exists(allPartPath)
+    with open(allPartPath, "r") as f:
+        allParts = json.load(f)
+    return allParts
+
+
+def EnsembleMultilabel(allViewDf: dict[str, pd.DataFrame]):
+    allParts = getAllPart()
+    allCaseId = GetCasesWithEssentialAngles()
+    allCasePred = []
+    allSubsetAcc = []
+    for pId, caseId in enumerate(tqdm(allCaseId, desc="Case")):
+        casePred = {"CaseID": caseId}
+        acc = 0
+        for part in allParts:
+            predFromDiffView = []
+            gt = None
+            for view, viewDf in allViewDf.items():
+                partname = f"pred_{part}"
+                if partname in viewDf.columns:
+                    targetRowData = viewDf[(viewDf["CaseID"] == caseId)]
+                    if targetRowData.empty:
+                        continue
+                    # print(targetRowData)
+                    targetStatus = targetRowData[partname].item()
+
+                    predFromDiffView.append(targetStatus)
+                    if gt is None:
+                        gt = viewDf[(viewDf["CaseID"] == caseId)][f"gt_{part}"].item()
+
+            if len(predFromDiffView) == 0:
+                # print(f"Skipped : {caseId}")
+                predFromDiffView.append(False)
+
+            ensemblePred = Counter(predFromDiffView).most_common(2)
+
+            allCount = [x[1] for x in ensemblePred]
+
+            if len(allCount) > 1 and allCount[0] == allCount[1]:
+                casePred[part] = True
+            else:
+                casePred[part] = ensemblePred[0][0]
+            if gt == casePred[part]:
+                acc += 1
+        subsetAcc = acc / len(allParts)
+        allSubsetAcc.append(subsetAcc)
+        allCasePred.append(casePred)
+        if pId % 500 == 0:
+            print(np.mean(allSubsetAcc))
+    print(np.mean(allSubsetAcc))
+    multilabelPredDf = pd.json_normalize(allCasePred)
+    multilabelPredDf.to_csv("./tmp/multilabel_pred.csv")
+
+
+def EvalMultilabel():
+    predDf = pd.read_csv("./tmp/multilabel_pred.csv")
+    gtDf = pd.read_csv(
+        "/home/alextay96/Desktop/new_workspace/partlist_prediction/data/processed/best_2/multilabel_2.csv"
+    )
+    gtDf = gtDf[gtDf["CaseID"].isin(predDf["CaseID"].unique().tolist())]
+    allParts = getAllPart()
+    allEvalResults = []
+    allPredByPart = {x: [] for x in allParts}
+    allGtByPart = {x: [] for x in allParts}
+    allTPByPart = {x: 0 for x in allParts}
+    allTNByPart = {x: 0 for x in allParts}
+
+    for rowId, (_, row) in enumerate(tqdm(predDf.iterrows())):
+        caseId = row["CaseID"]
+        gtRow = gtDf[gtDf["CaseID"] == caseId]
+        acc = 0
+        payload = {"CaseID": caseId}
+        for part in allParts:
+            gtPart = True if gtRow[f"vision_{part}"].item() == 1 else False
+            predPart = row[part]
+            if np.isnan(predPart):
+                raise Exception("")
+            allPredByPart[part].append(predPart)
+            allGtByPart[part].append(gtPart)
+
+            if gtPart == predPart:
+                payload[part] = 1
+                acc += 1
+                if gtPart == True:
+                    allTPByPart[part] += 1
+                else:
+                    allTNByPart[part] += 1
+            else:
+                payload[part] = 0
+
+        caseAcc = acc / len(allParts)
+        payload["subset_acc"] = caseAcc
+        payload["correct"] = acc
+
+        allEvalResults.append(payload)
+        if rowId % 200 == 0:
+            print(np.mean([x["subset_acc"] for x in allEvalResults]))
+    evalresultDf = pd.json_normalize(allEvalResults)
+    evalresultDf.to_csv("./tmp/multilabel_result.csv")
+    allMetrics = []
+    for part in allParts:
+        metricByPart = {"part": part}
+        metricByPart["precision"] = average_precision_score(
+            allGtByPart[part], allPredByPart[part]
+        )
+        metricByPart["recall"] = recall_score(allGtByPart[part], allPredByPart[part])
+        metricByPart["tp"] = allTPByPart[part] / len(predDf)
+        metricByPart["tn"] = allTNByPart[part] / len(predDf)
+        metricByPart["acc"] = (allTPByPart[part] + allTNByPart[part]) / len(predDf)
+        allMetrics.append(metricByPart)
+    perfBreakdownDf = pd.json_normalize(allMetrics)
+    perfBreakdownDf.to_csv("./tmp/multilabel_breakdown.csv")
+
+
 if __name__ == "__main__":
     # DownloadModels()
     # GetCasesWithEssentialAngles()
@@ -426,4 +583,8 @@ if __name__ == "__main__":
     # IntegrateCVPred()
     # ReplacePredWithUnseen()
     # EnsemblePred()
-    EvalCaseAcc()
+    # EvalCaseAcc()
+    # GetMultilabelPred()
+    allViewDf = ReadMultiLabelDf()
+    EnsembleMultilabel(allViewDf=allViewDf)
+    EvalMultilabel()
