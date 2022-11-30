@@ -291,7 +291,7 @@ def trainEval(trainFile, valFile, kfoldId):
     logger = MLFlowLogger(
         experiment_name=trainParams.experimentName,
         tracking_uri=os.getenv("MLFLOW_TRACKING_URI"),
-        run_name=f"{trainParams.imgAngle}_{trainParams.runName}_{kfoldId}",
+        run_name=f"{trainParams.imgAngle}_{kfoldId}",
     )
 
     checkpoint_callback = ModelCheckpoint(

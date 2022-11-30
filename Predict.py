@@ -249,15 +249,13 @@ def IntegrateCVPred():
         cvPredDf["part"] = part
         cvPredDf["view"] = view
         predOutputDf = pd.concat([predOutputDf, cvPredDf])
-    predOutputDf.to_csv("./all_cv_pred.csv")
+    predOutputDf.to_csv("./tmp/all_cv_pred.csv")
 
     return predOutputDf
 
 
 def GetCaseWithCompleteImg():
-    allRawPred = pd.read_csv(
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/raw_image_pred.csv"
-    )
+    allRawPred = pd.read_csv("./tmp/raw_image_pred.csv")
     perfectCaseId = GetCasesWithEssentialAngles()
     allRawPred["CaseID"] = allRawPred["files"].apply(
         lambda x: int(x.split("/")[-1].split("_")[0])
@@ -270,13 +268,11 @@ def GetCaseWithCompleteImg():
 
 def ReplacePredWithUnseen():
     validPredDf = GetCaseWithCompleteImg()
-    allCvPred = pd.read_csv(
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/all_cv_pred.csv"
-    )
+    allCvPred = pd.read_csv("./tmp/all_cv_pred.csv")
     allCvPred["CaseID"] = allCvPred["filename"].apply(lambda x: int(x.split("_")[0]))
 
-    allPart = allCvPred["part"].unique().tolist()
-    allView = allCvPred["view"].unique().tolist()
+    # allPart = allCvPred["part"].unique().tolist()
+    # allView = allCvPred["view"].unique().tolist()
     modified = 0
     remainRaw = 0
     unseenPredList = []
@@ -315,13 +311,11 @@ def ReplacePredWithUnseen():
             print(f"Raw : {remainRaw}")
             print(f"Modified Ratio : {(modified) / (remainRaw + modified)}")
     unseenPredDf = pd.json_normalize(unseenPredList)
-    unseenPredDf.to_csv("./unseen_pred.csv")
+    unseenPredDf.to_csv("./tmp/unseen_pred.csv")
 
 
 def EnsembleWorker(caseIdList):
-    predDf = pd.read_csv(
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/raw_image_pred.csv"
-    )
+    predDf = pd.read_csv("./tmp/raw_image_pred.csv")
     predDf["CaseID"] = predDf["files"].apply(
         lambda x: int(x.split("/")[-1].split("_")[0])
     )
@@ -351,15 +345,13 @@ def EnsembleWorker(caseIdList):
                 else:
                     mostCommonPred = mostCommonPredDf.item()
                 dmgStatus = mostCommonPred
-            casePredInfo[f"vision_{part}"] = dmgStatus
+            casePredInfo[f"pred_{part}"] = dmgStatus
         allPartPredList.append(casePredInfo)
     return allPartPredList
 
 
 def EnsemblePred():
-    predDf = pd.read_csv(
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/raw_image_pred.csv"
-    )
+    predDf = pd.read_csv("./tmp/raw_image_pred.csv")
     predDf["CaseID"] = predDf["files"].apply(
         lambda x: int(x.split("/")[-1].split("_")[0])
     )
@@ -379,20 +371,18 @@ def EnsemblePred():
     #
     predCompleteDf = pd.json_normalize(allPartPredList)
     print(predCompleteDf)
-    predCompleteDf.to_csv("./complete_pred.csv")
+    predCompleteDf.to_csv("./tmp/complete_pred.csv")
 
 
 def EvalCaseAcc():
     gtDf = pd.read_csv(
         "/home/alextay96/Desktop/new_workspace/partlist_prediction/data/processed/best_2/multilabel_2.csv"
     )
-    predDf = pd.read_csv(
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/complete_pred.csv"
-    )
+    predDf = pd.read_csv("./tmp/complete_pred.csv")
     gtDf = gtDf[gtDf["CaseID"].isin(predDf["CaseID"].unique().tolist())]
 
     evalPerfBreakdown = []
-    targetCol = [x for x in predDf.columns if "vision" in x]
+    targetCol = [x.replace("pred_", "") for x in predDf.columns if "pred_" in x]
     allAcc = []
     for caseId in tqdm(predDf["CaseID"].unique().tolist()):
         correct = 0
@@ -400,8 +390,8 @@ def EvalCaseAcc():
         wrongPart = []
         correctPart = []
         for part in targetCol:
-            predFromImg = predDf[predDf["CaseID"] == caseId][part].item()
-            gtFromPartList = gtDf[gtDf["CaseID"] == caseId][part].item()
+            predFromImg = predDf[predDf["CaseID"] == caseId][f"pred_{part}"].item()
+            gtFromPartList = gtDf[gtDf["CaseID"] == caseId][f"vision_{part}"].item()
             if predFromImg == gtFromPartList:
                 correct += 1
                 correctPart.append(part)
@@ -421,7 +411,7 @@ def EvalCaseAcc():
         if len(evalPerfBreakdown) % 1000 == 0:
             print(np.mean(allAcc))
     perfBreakDownDf = pd.json_normalize(evalPerfBreakdown)
-    perfBreakDownDf.to_csv("./perf_breakdown.csv")
+    perfBreakDownDf.to_csv("./tmp/complete_perf_by_case.csv")
     print(perfBreakDownDf["caseAcc"].mean())
 
 
@@ -431,8 +421,9 @@ if __name__ == "__main__":
     # modelDf = LoadModel()
     # fileDf = GetAllCaseToProcess()
     # GeneratePrediction(modelDf=modelDf, processDf=fileDf)
-    # IntegrateCVPred()
     # GetCrossValPred()
+
+    # IntegrateCVPred()
     # ReplacePredWithUnseen()
-    EnsemblePred()
+    # EnsemblePred()
     EvalCaseAcc()

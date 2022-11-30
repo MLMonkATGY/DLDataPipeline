@@ -67,12 +67,11 @@ class MultilabelDataset(Dataset):
         # with open(trainParams.rejectFile, "r") as f:
         #     allRejFile = f.read().split("\n")
 
-        if len(targetFile) > 0:
-            self.df = self.df[self.df["Path"].isin(targetFile)]
-            beforeRemove = len(self.df)
-            # self.df = self.df[~self.df["Path"].isin(allRejFile)]
-            # afterRemove = len(self.df)
-            # print(f"Removed from reject file : {beforeRemove - afterRemove}")
+        assert len(targetFile) > 0
+        self.df = self.df[self.df["Path"].isin(targetFile)]
+        # self.df = self.df[~self.df["Path"].isin(allRejFile)]
+        # afterRemove = len(self.df)
+        # print(f"Removed from reject file : {beforeRemove - afterRemove}")
         self.colName = colName
         # assert self.colName in csv_file
         self.transform = transform
