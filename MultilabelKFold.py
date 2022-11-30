@@ -155,7 +155,7 @@ def GetDataloaders(trainFile, valFile):
 
 
 class ProcessModel(pl.LightningModule):
-    def __init__(self):
+    def __init__(self, pos_weight=None):
         super(ProcessModel, self).__init__()
         self.model = create_model()
         self.testAccMetric = MultilabelAccuracy(num_labels=len(trainParams.targetPart))
@@ -174,10 +174,9 @@ class ProcessModel(pl.LightningModule):
             num_classes=len(trainParams.targetPart), multiclass=False
         ).to(self.device)
 
-        self.criterion = torch.nn.BCEWithLogitsLoss()
-
-        self.save_hyperparameters()
+        self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(pos_weight))
         self.sigmoid = torch.nn.Sigmoid()
+        self.save_hyperparameters()
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.model.parameters(), trainParams.learningRate)
@@ -300,7 +299,7 @@ def trainEval(trainFile, valFile, kfoldId):
         mode="max",
         filename="{epoch:02d}-{test_acc:.2f}",
     )
-    trainProcessModel = ProcessModel()
+    trainProcessModel = ProcessModel(trainLoader.dataset.allPosWeight)
     trainer = pl.Trainer(
         # accumulate_grad_batches=5,
         default_root_dir=f"./outputs/{trainParams.localSaveDir}",

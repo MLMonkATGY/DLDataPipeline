@@ -69,12 +69,19 @@ class MultilabelDataset(Dataset):
 
         assert len(targetFile) > 0
         self.df = self.df[self.df["Path"].isin(targetFile)]
+
         # self.df = self.df[~self.df["Path"].isin(allRejFile)]
         # afterRemove = len(self.df)
         # print(f"Removed from reject file : {beforeRemove - afterRemove}")
         self.colName = colName
         # assert self.colName in csv_file
         self.transform = transform
+        self.allPosWeight = []
+        for col in self.colName:
+            posWeight = len(self.df[self.df[col] == 1]) / len(
+                self.df[self.df[col] == 0]
+            )
+            self.allPosWeight.append(posWeight)
 
     def __len__(self):
         return len(self.df)
