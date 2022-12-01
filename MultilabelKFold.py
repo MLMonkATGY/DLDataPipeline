@@ -391,6 +391,8 @@ if __name__ == "__main__":
     allSrcAnnFile = glob.glob(searchImgView, recursive=True)
     for srcAnnPath in tqdm(allSrcAnnFile, desc="view"):
         imgAngle = srcAnnPath.split("/")[-1].split("_")[1]
+        if imgAngle != "Front View":
+            continue
         trainParams.srcAnnFile = srcAnnPath
         trainParams.imgAngle = imgAngle
         srcDf = pd.read_csv(trainParams.srcAnnFile)

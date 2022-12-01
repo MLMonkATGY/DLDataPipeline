@@ -216,13 +216,13 @@ def GetCrossValPred():
 def GetMultilabelPred():
     with open("./data/angle.json", "r") as f:
         anglePartMap = json.load(f)
-    outputDir = pathlib.Path("./tmp/multilabel_pred")
-
+    outputDir = pathlib.Path("./tmp/multilabel_pred_pos_weight")
+    os.makedirs(outputDir, exist_ok=True)
     for view, parts in tqdm(anglePartMap.items(), desc="angle"):
         runName = f"cv_pred_{view}"
         query = f"tags.`mlflow.runName`='{runName}'"
         runs = MlflowClient().search_runs(
-            experiment_ids=["66"],
+            experiment_ids=["67"],
             filter_string=query,
             order_by=["attribute.start_time DESC"],
             max_results=1,
@@ -233,7 +233,7 @@ def GetMultilabelPred():
 
 
 def ReadMultiLabelDf():
-    search = "./tmp/multilabel_pred/**.csv"
+    search = "./tmp/multilabel_pred_pos_weight/**.csv"
     allPredfile = glob.glob(search, recursive=True)
     allDf = dict()
     for p in allPredfile:
@@ -242,7 +242,7 @@ def ReadMultiLabelDf():
         df["file"] = df["file"].apply(lambda x: ast.literal_eval(x)[0])
         df["CaseID"] = df["file"].apply(lambda x: int(x.split("/")[-1].split("_")[0]))
         allDf[imgAngle] = df
-        print(df[["CaseID"]])
+        # print(df[["CaseID"]])
     return allDf
 
 
@@ -509,11 +509,11 @@ def EnsembleMultilabel(allViewDf: dict[str, pd.DataFrame]):
             print(np.mean(allSubsetAcc))
     print(np.mean(allSubsetAcc))
     multilabelPredDf = pd.json_normalize(allCasePred)
-    multilabelPredDf.to_csv("./tmp/multilabel_pred.csv")
+    multilabelPredDf.to_csv("./tmp/multilabel_pred_pos_weight.csv")
 
 
 def EvalMultilabel():
-    predDf = pd.read_csv("./tmp/multilabel_pred.csv")
+    predDf = pd.read_csv("./tmp/multilabel_pred_pos_weight.csv")
     gtDf = pd.read_csv(
         "/home/alextay96/Desktop/new_workspace/partlist_prediction/data/processed/best_2/multilabel_2.csv"
     )
@@ -556,7 +556,7 @@ def EvalMultilabel():
         if rowId % 200 == 0:
             print(np.mean([x["subset_acc"] for x in allEvalResults]))
     evalresultDf = pd.json_normalize(allEvalResults)
-    evalresultDf.to_csv("./tmp/multilabel_result.csv")
+    evalresultDf.to_csv("./tmp/multilabel_result_pos_weight.csv")
     allMetrics = []
     for part in allParts:
         metricByPart = {"part": part}
@@ -569,7 +569,7 @@ def EvalMultilabel():
         metricByPart["acc"] = (allTPByPart[part] + allTNByPart[part]) / len(predDf)
         allMetrics.append(metricByPart)
     perfBreakdownDf = pd.json_normalize(allMetrics)
-    perfBreakdownDf.to_csv("./tmp/multilabel_breakdown.csv")
+    perfBreakdownDf.to_csv("./tmp/multilabel_breakdown_pos_weight.csv")
 
 
 if __name__ == "__main__":
@@ -584,7 +584,7 @@ if __name__ == "__main__":
     # ReplacePredWithUnseen()
     # EnsemblePred()
     # EvalCaseAcc()
-    # GetMultilabelPred()
+    GetMultilabelPred()
     allViewDf = ReadMultiLabelDf()
     EnsembleMultilabel(allViewDf=allViewDf)
     EvalMultilabel()

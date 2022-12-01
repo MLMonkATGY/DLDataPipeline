@@ -78,9 +78,12 @@ class MultilabelDataset(Dataset):
         self.transform = transform
         self.allPosWeight = []
         for col in self.colName:
-            posWeight = len(self.df[self.df[col] == 1]) / len(
-                self.df[self.df[col] == 0]
-            )
+            if len(self.df[self.df[col] == 0]) > 0:
+                posWeight = len(self.df[self.df[col] == 1]) / (
+                    len(self.df[self.df[col] == 0])
+                )
+            else:
+                posWeight = 1
             self.allPosWeight.append(posWeight)
 
     def __len__(self):
