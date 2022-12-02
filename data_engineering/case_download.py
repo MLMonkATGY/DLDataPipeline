@@ -23,7 +23,7 @@ kwrgs = {
 
 bucketName = "mrm_raw"
 cli = boto3.client("s3", **kwrgs)
-cli.create_bucket(Bucket=bucketName)
+# cli.create_bucket(Bucket=bucketName)
 buckets = cli.list_buckets()
 # uploadFile = (
 #     r"C:\Users\alex\Desktop\infrastructure\download\download_tasks.csv"
@@ -33,13 +33,20 @@ buckets = cli.list_buckets()
 #     "get_object",
 #     Params={"Bucket": bucketName, "Key": "download_tasks.csv"},
 # )
-result = cli.list_objects_v2(Bucket=bucketName, Prefix="case_")
+paginator = cli.get_paginator("list_objects")
+operation_parameters = {"Bucket": bucketName, "Prefix": "case_"}
+page_iterator = paginator.paginate(**operation_parameters)
+allDownloadedCase = []
+for page in page_iterator:
+    pageContent = page["Contents"]
+    downloadedCaseId = [int(x["Key"].split("_")[-1]) for x in pageContent]
+    allDownloadedCase.extend(downloadedCaseId)
 startId = 10000000
 endIdx = 16000000
 for caseId in tqdm(range(startId, endIdx)):
     try:
-        # if (caseId in downloadedZip):
-        #     continue
+        if caseId in allDownloadedCase:
+            continue
         url = f"http://10.1.1.50:3000/api/dsa/query/get_caseFiles?case_id={caseId}&get_file_info_only=1"
         r = requests.get(url, allow_redirects=True)
         key = f"files_{caseId}"
