@@ -1,3 +1,4 @@
+from collections import Counter
 from dataclasses import dataclass
 from pickle import TRUE
 from pprint import pprint
@@ -51,6 +52,51 @@ import pathlib
 from LocalPipeline import getAllParts
 import mlflow
 from sklearn.metrics import accuracy_score
+from skmultilearn.model_selection.measures import get_combination_wise_output_matrix
+from skmultilearn.model_selection import (
+    iterative_train_test_split,
+)
+from skmultilearn.model_selection.iterative_stratification import (
+    IterativeStratification,
+)
+from iterstrat.ml_stratifiers import MultilabelStratifiedKFold
+
+
+class FocalLoss2d(torch.nn.modules.loss._WeightedLoss):
+    def __init__(
+        self,
+        gamma=2,
+        weight=None,
+        size_average=None,
+        ignore_index=-100,
+        reduce=None,
+        reduction="mean",
+        balance_param=0.25,
+    ):
+        super(FocalLoss2d, self).__init__(weight, size_average, reduce, reduction)
+        self.gamma = gamma
+        self.weight = weight
+        self.size_average = size_average
+        self.ignore_index = ignore_index
+        self.balance_param = balance_param
+
+    def forward(self, input, target):
+
+        # inputs and targets are assumed to be BatchxClasses
+        assert len(input.shape) == len(target.shape)
+        assert input.size(0) == target.size(0)
+        assert input.size(1) == target.size(1)
+
+        # compute the negative likelyhood
+        logpt = -F.binary_cross_entropy_with_logits(
+            input, target, pos_weight=self.weight, reduction=self.reduction
+        )
+        pt = torch.exp(logpt)
+
+        # compute the loss
+        focal_loss = -((1 - pt) ** self.gamma) * logpt
+        # balanced_focal_loss = self.balance_param * focal_loss
+        return focal_loss
 
 
 def hamming_score(y_true, y_pred):
@@ -174,7 +220,7 @@ class ProcessModel(pl.LightningModule):
             num_classes=len(trainParams.targetPart), multiclass=False
         ).to(self.device)
 
-        self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(pos_weight))
+        self.criterion = FocalLoss2d()
         self.sigmoid = torch.nn.Sigmoid()
         self.save_hyperparameters()
 
@@ -224,7 +270,7 @@ class ProcessModel(pl.LightningModule):
         images = imgs.to(self.device)
         targets = targets.to(self.device)
         logit = self.model(images)
-        loss = self.criterion(logit, targets)
+        # loss = self.criterion(logit, targets)
         preds = logit > 0.5
         # subsetAcc = accuracy_score()
         self.testAccMetric.update(preds, targets)
@@ -382,6 +428,19 @@ def StorePred(allPreds: List, targetPart: List[str], imgAngle: str):
         print(f"Completed part {imgAngle} {targetPart}")
 
 
+def GenLabelGroup(x):
+    rawNpArray = np.array2string(
+        x.values, precision=2, separator=",", suppress_small=True
+    )
+    return rawNpArray
+
+
+def CountLabelComb(srcDf, allTargetParts):
+    srcDf["label_combination"] = srcDf[allTargetParts].apply(GenLabelGroup, axis=1)
+    combDf = srcDf["label_combination"].value_counts().reset_index()
+    print(combDf)
+
+
 if __name__ == "__main__":
 
     imgSrcDir, labelSrcDir = GetDataDir()
@@ -391,24 +450,26 @@ if __name__ == "__main__":
     allSrcAnnFile = glob.glob(searchImgView, recursive=True)
     for srcAnnPath in tqdm(allSrcAnnFile, desc="view"):
         imgAngle = srcAnnPath.split("/")[-1].split("_")[1]
-        if imgAngle != "Front View":
-            continue
         trainParams.srcAnnFile = srcAnnPath
         trainParams.imgAngle = imgAngle
         srcDf = pd.read_csv(trainParams.srcAnnFile)
+
         allTargetParts = [x for x in srcDf.columns if x in allParts]
         trainParams.runName = imgAngle
         trainParams.targetPart = allTargetParts
-        skf = KFold(n_splits=trainParams.kFoldSplit)
+        mulitlearnStratify = MultilabelStratifiedKFold(n_splits=trainParams.kFoldSplit)
         targetPart = trainParams.targetPart
         # srcDf2 = BalanceSampling(srcDf, allTargetParts)
         y = srcDf[allTargetParts]
         X = srcDf["Path"]
-        print(type(X))
-        print(type(y))
+        CountLabelComb(srcDf, allTargetParts)
+
         allSplit = []
         allPreds = []
-        for kfoldId, (train_index, test_index) in enumerate(skf.split(X, y)):
+        for kfoldId, (train_index, test_index) in enumerate(
+            mulitlearnStratify.split(X, y)
+        ):
+
             X_train, X_test = X[train_index], X[test_index]
             y_train, y_test = y.loc[train_index], y.loc[test_index]
             allSplit.append(
