@@ -216,13 +216,13 @@ def GetCrossValPred():
 def GetMultilabelPred():
     with open("./data/angle.json", "r") as f:
         anglePartMap = json.load(f)
-    outputDir = pathlib.Path("./tmp/multilabel_pred_strat")
+    outputDir = pathlib.Path("./tmp/dmg_multilabel_high_resolution")
     os.makedirs(outputDir, exist_ok=True)
     for view, parts in tqdm(anglePartMap.items(), desc="angle"):
         runName = f"cv_pred_{view}"
         query = f"tags.`mlflow.runName`='{runName}'"
         runs = MlflowClient().search_runs(
-            experiment_ids=["68"],
+            experiment_ids=["74"],
             filter_string=query,
             order_by=["attribute.start_time DESC"],
             max_results=1,
@@ -233,7 +233,7 @@ def GetMultilabelPred():
 
 
 def ReadMultiLabelDf():
-    search = "./tmp/multilabel_pred_strat/**.csv"
+    search = "./tmp/dmg_multilabel_high_resolution/**.csv"
     allPredfile = glob.glob(search, recursive=True)
     allDf = dict()
     for p in allPredfile:
@@ -509,11 +509,12 @@ def EnsembleMultilabel(allViewDf: dict[str, pd.DataFrame]):
             print(np.mean(allSubsetAcc))
     print(np.mean(allSubsetAcc))
     multilabelPredDf = pd.json_normalize(allCasePred)
-    multilabelPredDf.to_csv("./tmp/multilabel_pred_strat.csv")
+
+    multilabelPredDf.to_csv("./tmp/multilabel_pred_high_resolution.csv")
 
 
 def EvalMultilabel():
-    predDf = pd.read_csv("./tmp/multilabel_pred_strat.csv")
+    predDf = pd.read_csv("./tmp/multilabel_pred_high_resolution.csv")
     gtDf = pd.read_csv(
         "/home/alextay96/Desktop/new_workspace/partlist_prediction/data/processed/best_2/multilabel_2.csv"
     )
@@ -522,6 +523,9 @@ def EvalMultilabel():
     allEvalResults = []
     allPredByPart = {x: [] for x in allParts}
     allGtByPart = {x: [] for x in allParts}
+    allGtPosByPart = {x: 0 for x in allParts}
+    allGtNegByPart = {x: 0 for x in allParts}
+
     allTPByPart = {x: 0 for x in allParts}
     allTNByPart = {x: 0 for x in allParts}
 
@@ -537,6 +541,10 @@ def EvalMultilabel():
                 raise Exception("")
             allPredByPart[part].append(predPart)
             allGtByPart[part].append(gtPart)
+            if gtPart == True:
+                allGtPosByPart[part] += 1
+            else:
+                allGtNegByPart[part] += 1
 
             if gtPart == predPart:
                 payload[part] = 1
@@ -556,7 +564,7 @@ def EvalMultilabel():
         if rowId % 200 == 0:
             print(np.mean([x["subset_acc"] for x in allEvalResults]))
     evalresultDf = pd.json_normalize(allEvalResults)
-    evalresultDf.to_csv("./tmp/multilabel_result_strat.csv")
+    evalresultDf.to_csv("./tmp/multilabel_result_high_resolution.csv")
     allMetrics = []
     for part in allParts:
         metricByPart = {"part": part}
@@ -564,12 +572,12 @@ def EvalMultilabel():
             allGtByPart[part], allPredByPart[part]
         )
         metricByPart["recall"] = recall_score(allGtByPart[part], allPredByPart[part])
-        metricByPart["tp"] = allTPByPart[part] / len(predDf)
-        metricByPart["tn"] = allTNByPart[part] / len(predDf)
+        metricByPart["tp"] = allTPByPart[part] / allGtPosByPart[part]
+        metricByPart["tn"] = allTNByPart[part] / allGtNegByPart[part]
         metricByPart["acc"] = (allTPByPart[part] + allTNByPart[part]) / len(predDf)
         allMetrics.append(metricByPart)
     perfBreakdownDf = pd.json_normalize(allMetrics)
-    perfBreakdownDf.to_csv("./tmp/multilabel_breakdown_strat.csv")
+    perfBreakdownDf.to_csv("./tmp/multilabel_breakdown_high_resolution.csv")
 
 
 if __name__ == "__main__":

@@ -59,7 +59,10 @@ from skmultilearn.model_selection import (
 from skmultilearn.model_selection.iterative_stratification import (
     IterativeStratification,
 )
-from iterstrat.ml_stratifiers import MultilabelStratifiedKFold
+from iterstrat.ml_stratifiers import (
+    MultilabelStratifiedKFold,
+    MultilabelStratifiedShuffleSplit,
+)
 
 
 class FocalLoss2d(torch.nn.modules.loss._WeightedLoss):
@@ -121,9 +124,11 @@ def hamming_score(y_true, y_pred):
 def create_model():
 
     # load Faster RCNN pre-trained model
+
     model = torchvision.models.efficientnet_b0(
         weights=torchvision.models.EfficientNet_B0_Weights.DEFAULT
     )
+
     num_ftrs = model.classifier[1].in_features
     model.classifier[1] = torch.nn.Linear(
         in_features=num_ftrs, out_features=len(trainParams.targetPart)
@@ -132,7 +137,7 @@ def create_model():
     return model
 
 
-def GetDataloaders(trainFile, valFile):
+def GetDataloaders(trainFile, valFile, isFinetune=False):
     trainTransform = A.Compose(
         [
             A.LongestMaxSize(trainParams.imgSize),
@@ -141,12 +146,12 @@ def GetDataloaders(trainFile, valFile):
                 min_width=trainParams.imgSize,
                 border_mode=0,
             ),
-            A.ColorJitter(p=0.2),
-            A.CoarseDropout(max_height=16, max_width=16, p=0.2),
-            A.GaussianBlur(blur_limit=(1, 5), p=0.2),
-            A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
-            A.GridDistortion(border_mode=0, p=0.2),
-            A.RandomGridShuffle(p=0.2),
+            # A.ColorJitter(p=0.2),
+            # A.CoarseDropout(max_height=8, max_width=8, p=0.2),
+            # A.GaussianBlur(blur_limit=(1, 5), p=0.2),
+            # A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
+            # A.GridDistortion(border_mode=0, p=0.2),
+            # A.RandomGridShuffle(p=0.2),
             A.Normalize(),
             ToTensorV2(),
         ]
@@ -172,6 +177,8 @@ def GetDataloaders(trainFile, valFile):
         shuffle=True,
         batch_size=trainParams.trainBatchSize,
         num_workers=trainParams.trainCPUWorker,
+        pin_memory=True,
+        persistent_workers=True,
     )
     evalDs = MultilabelDataset(
         trainParams.srcAnnFile, trainParams.targetPart, evalTransform, valFile
@@ -179,8 +186,8 @@ def GetDataloaders(trainFile, valFile):
     evalLoader = DataLoader2(
         evalDs,
         shuffle=False,
-        batch_size=trainParams.trainBatchSize,
-        num_workers=5,
+        batch_size=trainParams.trainBatchSize * 2,
+        num_workers=trainParams.trainCPUWorker,
     )
     testDs = MultilabelDataset(
         trainParams.srcAnnFile, trainParams.targetPart, evalTransform, valFile
@@ -189,7 +196,7 @@ def GetDataloaders(trainFile, valFile):
         testDs,
         shuffle=False,
         batch_size=1,
-        num_workers=5,
+        num_workers=trainParams.trainCPUWorker,
     )
     assert set(evalDs.df["Filename"].unique().tolist()).isdisjoint(
         set(trainDs.df["Filename"].unique().tolist())
@@ -201,9 +208,13 @@ def GetDataloaders(trainFile, valFile):
 
 
 class ProcessModel(pl.LightningModule):
-    def __init__(self, pos_weight=None):
-        super(ProcessModel, self).__init__()
-        self.model = create_model()
+    def __init__(self, model, isFineTune=False, pos_weight=None):
+        super(
+            ProcessModel,
+            self,
+        ).__init__()
+        self.model = model
+        self.isFinetune = isFineTune
         self.testAccMetric = MultilabelAccuracy(num_labels=len(trainParams.targetPart))
         self.trainAccMetric = MultilabelAccuracy(num_labels=len(trainParams.targetPart))
         self.testConfMat = MultilabelConfusionMatrix(
@@ -220,11 +231,15 @@ class ProcessModel(pl.LightningModule):
             num_classes=len(trainParams.targetPart), multiclass=False
         ).to(self.device)
 
-        self.criterion = FocalLoss2d()
+        self.criterion = torch.nn.BCEWithLogitsLoss(
+            pos_weight=torch.tensor(pos_weight) * trainParams.posWeightScaler
+        )
         self.sigmoid = torch.nn.Sigmoid()
-        self.save_hyperparameters()
+        self.posThreshold = trainParams.posThreshold
+        # self.save_hyperparameters()
 
     def configure_optimizers(self):
+
         return torch.optim.Adam(self.model.parameters(), trainParams.learningRate)
 
     def forward(self, imgs):
@@ -240,7 +255,7 @@ class ProcessModel(pl.LightningModule):
         targets = targets.to(self.device)
         logit = self.model(images)
         loss = self.criterion(logit, targets)
-        preds = logit > 0.5
+        preds = logit > self.posThreshold
         self.trainAccMetric.update(preds, targets)
         self.trainConfMat.update(preds, targets.type(torch.int64))
         self.log("train_loss", loss)
@@ -248,15 +263,27 @@ class ProcessModel(pl.LightningModule):
 
     def training_epoch_end(self, outputs) -> None:
         testAcc = self.trainAccMetric.compute()
-        self.log("train_acc", testAcc, prog_bar=True)
+        self.log("t_acc", testAcc, prog_bar=False)
         self.trainAccMetric.reset()
         confMat = self.trainConfMat.compute()
         # tn = confMat[0][0]
         # fp = confMat[0][1]
-        # tp = confMat[1][1]
-        # fn = confMat[1][0]
-        # self.log("train_tp", tp, prog_bar=False)
-        # self.log("train_tn", tn, prog_bar=False)
+        allTp = []
+        allTn = []
+
+        for i, clsMat in enumerate(confMat):
+            tp = clsMat[1][1]
+            tn = clsMat[0][0]
+            self.log(f"t_cls_{i}_tp", tp, prog_bar=False)
+            self.log(f"t_cls_{i}_tn", tn, prog_bar=False)
+            allTp.append(tp)
+            allTn.append(tn)
+        avgTp = torch.mean(torch.tensor(allTp))
+        avgTn = torch.mean(torch.tensor(allTn))
+
+        self.log("t_tp", avgTp, prog_bar=True)
+        self.log("t_tn", avgTn, prog_bar=True)
+
         # self.log("train_fp", fp, prog_bar=False)
         # self.log("train_fn", fn, prog_bar=False)
 
@@ -270,13 +297,15 @@ class ProcessModel(pl.LightningModule):
         images = imgs.to(self.device)
         targets = targets.to(self.device)
         logit = self.model(images)
-        # loss = self.criterion(logit, targets)
-        preds = logit > 0.5
+        loss = self.criterion(logit, targets)
+        preds = logit > self.posThreshold
         # subsetAcc = accuracy_score()
         self.testAccMetric.update(preds, targets)
         self.testConfMat.update(preds, targets.type(torch.int64))
         self.testPrecision.update(preds, targets.type(torch.int64))
         self.testRecall.update(preds, targets.type(torch.int64))
+        self.log("e_loss", loss, prog_bar=True)
+
         return preds, targets
 
     def validation_epoch_end(self, val_step_outputs) -> None:
@@ -288,21 +317,28 @@ class ProcessModel(pl.LightningModule):
 
         exactAcc = accuracy_score(targets.cpu().numpy(), preds.cpu().numpy())
         hammingScore, _ = hamming_score(targets.cpu().numpy(), preds.cpu().numpy())
-        self.log("test_acc", testAcc, prog_bar=True)
-        self.log("precision", testPrecision, prog_bar=True)
-        self.log("recall", testRecall, prog_bar=True)
-        self.log("exact", exactAcc, prog_bar=True)
+        self.log("e_acc", testAcc, prog_bar=False)
+        self.log("precision", testPrecision, prog_bar=False)
+        self.log("recall", testRecall, prog_bar=False)
+        self.log("exact", exactAcc, prog_bar=False)
         self.log("subset", hammingScore, prog_bar=True)
 
         confMat = self.testConfMat.compute()
-        # tn = confMat[0][0]
-        # fp = confMat[0][1]
-        # tp = confMat[1][1]
-        # fn = confMat[1][0]
-        # self.log("test_tp", tp, prog_bar=True)
-        # self.log("test_tn", tn, prog_bar=True)
-        # self.log("test_fp", fp, prog_bar=False)
-        # self.log("test_fn", fn, prog_bar=False)
+        allTp = []
+        allTn = []
+
+        for i, clsMat in enumerate(confMat):
+            tp = clsMat[1][1]
+            tn = clsMat[0][0]
+            self.log(f"e_cls_{i}_tp", tp, prog_bar=False)
+            self.log(f"e_cls_{i}_tn", tn, prog_bar=False)
+            allTp.append(tp)
+            allTn.append(tn)
+        avgTp = torch.mean(torch.tensor(allTp))
+        avgTn = torch.mean(torch.tensor(allTn))
+
+        self.log("e_tp", avgTp, prog_bar=True)
+        self.log("e_tn", avgTn, prog_bar=True)
 
         self.testConfMat.reset()
         self.testRecall.reset()
@@ -318,7 +354,7 @@ class ProcessModel(pl.LightningModule):
         parts = [x[0] for x in rawParts]
         labels = batch["target"].cpu().numpy().squeeze(0)
         logit = self(imgs)
-        preds = (logit > 0.5).cpu().numpy().squeeze(0)
+        preds = (logit > self.posThreshold).cpu().numpy().squeeze(0)
         # predProbNp = predProb.cpu().numpy().tolist()[0]
         info = {
             "file": file,
@@ -331,7 +367,9 @@ class ProcessModel(pl.LightningModule):
 
 
 def trainEval(trainFile, valFile, kfoldId):
-    trainLoader, valLoader, testLoader = GetDataloaders(trainFile, valFile)
+    trainLoader, valLoader, testLoader = GetDataloaders(
+        trainFile, valFile, isFinetune=False
+    )
 
     logger = MLFlowLogger(
         experiment_name=trainParams.experimentName,
@@ -340,13 +378,34 @@ def trainEval(trainFile, valFile, kfoldId):
     )
 
     checkpoint_callback = ModelCheckpoint(
-        monitor="test_acc",
+        monitor="subset",
         save_top_k=trainParams.saveTopNBest,
         mode="max",
-        filename="{epoch:02d}-{test_acc:.2f}",
+        filename="{subset:.2f}-{e_tp:.2f}--{e_tn:.2f}",
     )
-    trainProcessModel = ProcessModel(trainLoader.dataset.allPosWeight)
-    trainer = pl.Trainer(
+    model = create_model()
+    trainProcessModel = ProcessModel(
+        model, isFineTune=False, pos_weight=trainLoader.dataset.allPosWeight
+    )
+    trainer1 = pl.Trainer(
+        # accumulate_grad_batches=10,
+        default_root_dir=f"./outputs/{trainParams.localSaveDir}",
+        max_epochs=trainParams.maxEpoch,
+        accelerator="gpu",
+        devices=1,
+        check_val_every_n_epoch=trainParams.check_val_every_n_epoch,
+        num_sanity_val_steps=0,
+        benchmark=True,
+        precision=trainParams.trainingPrecision,
+        logger=logger,
+        log_every_n_steps=30,
+        callbacks=[checkpoint_callback],
+        detect_anomaly=False,
+        # limit_train_batches=200,
+        # limit_val_batches=5,
+        # limit_predict_batches=100,
+    )
+    trainer2 = pl.Trainer(
         # accumulate_grad_batches=5,
         default_root_dir=f"./outputs/{trainParams.localSaveDir}",
         max_epochs=trainParams.maxEpoch,
@@ -360,15 +419,27 @@ def trainEval(trainFile, valFile, kfoldId):
         log_every_n_steps=100,
         callbacks=[checkpoint_callback],
         detect_anomaly=False,
-        # limit_train_batches=1,
+        limit_train_batches=200,
         # limit_val_batches=100,
         # limit_predict_batches=100,
     )
 
-    trainer.fit(
+    trainer1.fit(
         trainProcessModel, train_dataloaders=trainLoader, val_dataloaders=valLoader
     )
-    predictions = trainer.predict(trainProcessModel, testLoader)
+    # trainLoader, valLoader, testLoader = GetDataloaders(
+    #     trainFile, valFile, isFinetune=True
+    # )
+    # for param in model.features.parameters():
+    #     param.requires_grad = False
+    # trainProcessModel = ProcessModel(
+    #     model, isFineTune=True, pos_weight=trainLoader.dataset.allPosWeight
+    # )
+
+    # trainer2.fit(
+    #     trainProcessModel, train_dataloaders=trainLoader, val_dataloaders=valLoader
+    # )
+    predictions = trainer1.predict(trainProcessModel, testLoader)
 
     displayLogger.success("Started Uploading Best Checkpoints..")
     mlflowLogger: MlflowClient = trainProcessModel.logger.experiment
@@ -457,19 +528,17 @@ if __name__ == "__main__":
         allTargetParts = [x for x in srcDf.columns if x in allParts]
         trainParams.runName = imgAngle
         trainParams.targetPart = allTargetParts
-        mulitlearnStratify = MultilabelStratifiedKFold(n_splits=trainParams.kFoldSplit)
+        mulitlearnStratify = MultilabelStratifiedKFold(n_splits=2, shuffle=True)
         targetPart = trainParams.targetPart
-        # srcDf2 = BalanceSampling(srcDf, allTargetParts)
         y = srcDf[allTargetParts]
         X = srcDf["Path"]
-        CountLabelComb(srcDf, allTargetParts)
+        # CountLabelComb(srcDf, allTargetParts)
 
         allSplit = []
         allPreds = []
         for kfoldId, (train_index, test_index) in enumerate(
             mulitlearnStratify.split(X, y)
         ):
-
             X_train, X_test = X[train_index], X[test_index]
             y_train, y_test = y.loc[train_index], y.loc[test_index]
             allSplit.append(

@@ -41,8 +41,9 @@ for page in page_iterator:
     pageContent = page["Contents"]
     downloadedCaseId = [int(x["Key"].split("_")[-1]) for x in pageContent]
     allDownloadedCase.extend(downloadedCaseId)
-startId = 10000000
-endIdx = 16000000
+startId = 9000000
+endIdx = 14000000
+
 for caseId in tqdm(range(startId, endIdx)):
     try:
         if caseId in allDownloadedCase:

@@ -23,6 +23,8 @@ class TrainClassiferParams:
     not_dmg_label_count: int
     dmg_label_count: int
     expId: int
+    posThreshold: float
+    posWeightScaler: float
 
 
 trainParams = TrainClassiferParams(
@@ -31,14 +33,14 @@ trainParams = TrainClassiferParams(
     targetPart="wheel",
     imgAngle="",
     version=1,
-    imgSize=480,
-    trainBatchSize=40,
-    trainCPUWorker=8,
-    experimentName="dmg_multilabel_reduce",
-    expId=69,
+    imgSize=300,
+    trainBatchSize=100,
+    trainCPUWorker=10,
+    experimentName="dmg_multilabel_high_resolution",
+    expId=74,
     localSaveDir="mlruns",
-    saveTopNBest=3,
-    check_val_every_n_epoch=1,
+    saveTopNBest=1,
+    check_val_every_n_epoch=5,
     learningRate=1e-3,
     trainingPrecision=16,
     randomSeed=99,
@@ -46,4 +48,6 @@ trainParams = TrainClassiferParams(
     kFoldSplit=3,
     not_dmg_label_count=0,
     dmg_label_count=0,
+    posThreshold=0.5,
+    posWeightScaler=10,
 )
