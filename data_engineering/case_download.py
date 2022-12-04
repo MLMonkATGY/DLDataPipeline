@@ -36,7 +36,7 @@ def download_worker(caseIdList):
     }
     cli = boto3.client("s3", **kwrgs)
     successiveFailure = 0
-    logger.success(f"start : {caseIdList[0]}")
+    print(f"start : {caseIdList[0]}")
     for caseId in tqdm(caseIdList, desc="download"):
         try:
             url2 = f"http://10.1.1.50:4011/api/dsa/query/get_caseData?case_id={caseId}&get_ai_images=0&get_related_cases=0&get_est_details=1"
@@ -49,9 +49,9 @@ def download_worker(caseIdList):
             cli.put_object(Bucket=bucketName, Body=r.content, Key=key)
             successiveFailure = 0
         except Exception as e1:
-            logger.warning(e1)
+            print(e1)
             successiveFailure += 1
-    logger.success(f"end : {caseIdList[-1]}")
+    print(f"end : {caseIdList[-1]}")
 
 
 if __name__ == "__main__":
