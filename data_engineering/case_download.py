@@ -49,11 +49,11 @@ def download_worker(caseIdList):
             if caseId in allDownloadedCase:
                 continue
             url2 = f"http://10.1.1.50:4011/api/dsa/query/get_caseData?case_id={caseId}&get_ai_images=0&get_related_cases=0&get_est_details=1"
-            r2 = requests.get(url2, allow_redirects=True)
+            r2 = requests.get(url2, allow_redirects=True, timeout=(1, 5))
             key2 = f"case_{caseId}"
             cli.put_object(Bucket=bucketName, Body=r2.content, Key=key2)
             url = f"http://10.1.1.50:3000/api/dsa/query/get_caseFiles?case_id={caseId}&get_file_info_only=1"
-            r = requests.get(url, allow_redirects=True)
+            r = requests.get(url, allow_redirects=True, timeout=(1, 5))
             key = f"files_{caseId}"
             cli.put_object(Bucket=bucketName, Body=r.content, Key=key)
             successiveFailure = 0
