@@ -10,6 +10,7 @@ import io
 import ujson as json
 from joblib import Parallel, delayed
 from boto3.session import Session
+from loguru import logger
 
 accessKey = "KIHI3SFQ0DNN7EAYM2E"
 secretKey = "w/lrXU98nFEMI/J7MDENG/bP1RfiCYERA9GH"
@@ -23,18 +24,7 @@ kwrgs = {
     # "Username": "aaa",
 }
 
-bucketName = "mrm_raw"
-cli = boto3.client("s3", **kwrgs)
-# cli.create_bucket(Bucket=bucketName)
-buckets = cli.list_buckets()
-# uploadFile = (
-#     r"C:\Users\alex\Desktop\infrastructure\download\download_tasks.csv"
-# )
-# cli.upload_file(uploadFile, bucketName, "download_tasks.csv")
-# downloadUrl = cli.generate_presigned_url(
-#     "get_object",
-#     Params={"Bucket": bucketName, "Key": "download_tasks.csv"},
-# )
+
 def download_worker(caseIdList):
     s = requests.Session()
 
@@ -46,10 +36,9 @@ def download_worker(caseIdList):
     }
     cli = boto3.client("s3", **kwrgs)
     successiveFailure = 0
-    for caseId in caseIdList:
+    logger.success(f"start : {caseIdList[0]}")
+    for caseId in tqdm(caseIdList, desc="download"):
         try:
-            if caseId in allDownloadedCase:
-                continue
             url2 = f"http://10.1.1.50:4011/api/dsa/query/get_caseData?case_id={caseId}&get_ai_images=0&get_related_cases=0&get_est_details=1"
             r2 = s.get(url2, allow_redirects=True, timeout=(1, 5))
             key2 = f"case_{caseId}"
@@ -60,8 +49,9 @@ def download_worker(caseIdList):
             cli.put_object(Bucket=bucketName, Body=r.content, Key=key)
             successiveFailure = 0
         except Exception as e1:
-            print(e1)
+            logger.warning(e1)
             successiveFailure += 1
+    logger.success(f"end : {caseIdList[-1]}")
 
 
 if __name__ == "__main__":
@@ -82,10 +72,11 @@ if __name__ == "__main__":
     allTargetCase = list(range(startId, endId))
     allCaseToDownload = list(set(allTargetCase).difference(set(allDownloadedCase)))
     downloadTaskbatch = []
-    batchSize = 100
+    batchSize = 5000
     workerNum = 10
     for i in range(0, len(allCaseToDownload), batchSize):
         downloadTaskbatch.append(allCaseToDownload[i : i + batchSize])
     Parallel(n_jobs=workerNum)(
-        delayed(download_worker)(batchTask) for batchTask in tqdm(downloadTaskbatch)
+        delayed(download_worker)(batchTask)
+        for batchTask in tqdm(downloadTaskbatch, desc="batch")
     )
