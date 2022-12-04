@@ -36,6 +36,8 @@ buckets = cli.list_buckets()
 #     Params={"Bucket": bucketName, "Key": "download_tasks.csv"},
 # )
 def download_worker(caseIdList):
+    s = requests.Session()
+
     kwrgs = {
         "endpoint_url": "http://192.168.1.4:8333",
         # "aws_access_key_id": accessKey,
@@ -49,38 +51,33 @@ def download_worker(caseIdList):
             if caseId in allDownloadedCase:
                 continue
             url2 = f"http://10.1.1.50:4011/api/dsa/query/get_caseData?case_id={caseId}&get_ai_images=0&get_related_cases=0&get_est_details=1"
-            r2 = requests.get(url2, allow_redirects=True, timeout=(1, 5))
+            r2 = s.get(url2, allow_redirects=True, timeout=(1, 5))
             key2 = f"case_{caseId}"
             cli.put_object(Bucket=bucketName, Body=r2.content, Key=key2)
             url = f"http://10.1.1.50:3000/api/dsa/query/get_caseFiles?case_id={caseId}&get_file_info_only=1"
-            r = requests.get(url, allow_redirects=True, timeout=(1, 5))
+            r = s.get(url, allow_redirects=True, timeout=(1, 5))
             key = f"files_{caseId}"
             cli.put_object(Bucket=bucketName, Body=r.content, Key=key)
             successiveFailure = 0
         except Exception as e1:
             print(e1)
             successiveFailure += 1
-            if successiveFailure > 5:
-                srcUrlIp = "10.1.1.50"
-                pingTestResp = os.system("ping -c 1 " + srcUrlIp)
-                if pingTestResp != 0:
-                    raise Exception("Url IP not reachable")
 
 
-# srcUrlIp = "10.1.1.50"
-# pingTestResp = os.system("ping -c 1 -t1000" + srcUrlIp)
-# if pingTestResp != 0:
-#     raise Exception("Url IP not reachable")
 if __name__ == "__main__":
+    bucketName = "mrm_raw"
+    cli = boto3.client("s3", **kwrgs)
+    # cli.create_bucket(Bucket=bucketName)
+    buckets = cli.list_buckets()
     paginator = cli.get_paginator("list_objects")
-    operation_parameters = {"Bucket": bucketName, "Prefix": "case_", "MaxKeys": 50000}
+    operation_parameters = {"Bucket": bucketName, "Prefix": "case_"}
     page_iterator = paginator.paginate(**operation_parameters)
     allDownloadedCase = []
     for page in tqdm(page_iterator):
         pageContent = page["Contents"]
         downloadedCaseId = [int(x["Key"].split("_")[-1]) for x in pageContent]
         allDownloadedCase.extend(downloadedCaseId)
-    startId = 9000000
+    startId = 10000000
     endId = 14000000
     allTargetCase = list(range(startId, endId))
     allCaseToDownload = list(set(allTargetCase).difference(set(allDownloadedCase)))
