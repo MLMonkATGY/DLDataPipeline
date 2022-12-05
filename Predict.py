@@ -581,17 +581,6 @@ def EvalMultilabel():
 
 
 if __name__ == "__main__":
-    # DownloadModels()
-    # GetCasesWithEssentialAngles()
-    # modelDf = LoadModel()
-    # fileDf = GetAllCaseToProcess()
-    # GeneratePrediction(modelDf=modelDf, processDf=fileDf)
-    # GetCrossValPred()
-
-    # IntegrateCVPred()
-    # ReplacePredWithUnseen()
-    # EnsemblePred()
-    # EvalCaseAcc()
     GetMultilabelPred()
     allViewDf = ReadMultiLabelDf()
     EnsembleMultilabel(allViewDf=allViewDf)
