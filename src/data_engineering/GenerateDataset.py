@@ -3,10 +3,11 @@ import boto3
 from tqdm import tqdm
 import ujson as json
 import awswrangler as wr
+from loguru import logger
 
-wr.config.s3_endpoint_url = "http://192.168.1.7:8333"
+wr.config.s3_endpoint_url = "http://localhost:8333"
 kwrgs = {
-    "endpoint_url": "http://192.168.1.7:8333",
+    "endpoint_url": "http://localhost:8333",
     "aws_access_key_id": "",
     "aws_secret_access_key": "",
     # "Username": "aaa",
@@ -17,13 +18,13 @@ cli = boto3.client("s3", **kwrgs)
 caseBucket = "tmp_case"
 partBucket = "tmp_part"
 fileBucket = "tmp_file"
-# cli.create_bucket(Bucket=caseBucket)
-# cli.create_bucket(Bucket=partBucket)
-# cli.create_bucket(Bucket=fileBucket)
+cli.create_bucket(Bucket=caseBucket)
+cli.create_bucket(Bucket=partBucket)
+cli.create_bucket(Bucket=fileBucket)
 
 buckets = cli.list_buckets()
 paginator = cli.get_paginator("list_objects_v2")
-operation_parameters = {"Bucket": bucketName, "Prefix": "case_", "MaxKeys": 100000}
+operation_parameters = {"Bucket": bucketName, "Prefix": "case_", "MaxKeys": 50000}
 page_iterator = paginator.paginate(**operation_parameters)
 allDownloadedCase = []
 allCasedf = []
@@ -33,7 +34,7 @@ isFirstCase = True
 isFirstPart = True
 isFirstFile = True
 
-batchSize = 20000
+batchSize = 100
 for page in tqdm(page_iterator, desc="page"):
     pageContent = page["Contents"]
 
@@ -81,6 +82,7 @@ for page in tqdm(page_iterator, desc="page"):
                 isFirstPart = False
                 print("Written partlist to remote fs")
             if len(allCasedf) >= batchSize:
+                print("Current ")
                 rawCaseDf = pd.concat(allCasedf)
                 wr.s3.to_parquet(
                     df=rawCaseDf,
