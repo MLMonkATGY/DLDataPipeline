@@ -10,3 +10,4 @@ __pycache__
 models/
 cross_val_pred/
 visualization/
+*.png
