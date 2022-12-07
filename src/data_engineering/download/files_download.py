@@ -16,24 +16,10 @@ import awswrangler as wr
 
 def download_worker(caseIdList, outputDir):
     s = requests.Session()
-
-    kwrgs = {
-        "endpoint_url": "http://192.168.1.4:8333",
-    }
-    bucketName = "raw_imgs"
-    cli = boto3.client("s3", **kwrgs)
     successiveFailure = 0
     print(f"start : {caseIdList[0]}")
     for caseId in tqdm(caseIdList, desc="download"):
         try:
-            paginator = cli.get_paginator("list_objects_v2")
-            operation_parameters = {"Bucket": bucketName, "Prefix": f"{caseId}_"}
-            page_iterator = paginator.paginate(**operation_parameters)
-            for page in page_iterator:
-                if page["KeyCount"] > 0:
-                    raise Exception(f"Case file already exist : {caseId}")
-                else:
-                    break
             url = f"http://10.1.1.50:4011/api/dsa/query/get_caseFiles?case_id={caseId}"
             r = s.get(url, allow_redirects=True)
             with open(f"{outputDir}/{caseId}.zip", "wb") as f:
@@ -53,17 +39,30 @@ if __name__ == "__main__":
 
     cli = boto3.client("s3", **kwrgs)
     # cli.create_bucket(Bucket=bucketName)
-    outputDir = r""
+    outputDir = r"./"
     os.makedirs(outputDir, exist_ok=True)
     wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
     bucket2 = "scope_case"
-    caseDf = wr.s3.read_parquet(f"s3://{bucket2}/", columns=["CaseID", "Vehicle_Type"])
+    caseDf = wr.s3.read_parquet(
+        f"s3://{bucket2}/", dataset=True, columns=["CaseID", "Vehicle_Type"]
+    )
     targetVehicleType = "Saloon - 4 Dr"
     caseDf = caseDf[caseDf["Vehicle_Type"] == targetVehicleType]
-    allCaseToDownload = caseDf["CaseID"].unique().tolist()
+    validCaseToDownload = caseDf["CaseID"].unique().tolist()
     downloadTaskbatch = []
     batchSize = 50
     workerNum = 1
+    downloadedImgs = []
+    paginator = cli.get_paginator("list_objects_v2")
+    operation_parameters = {"Bucket": "raw_imgs"}
+    page_iterator = paginator.paginate(**operation_parameters)
+    for page in tqdm(page_iterator):
+        pageContent = page["Contents"]
+        downloadedCaseId = set([int(x["Key"].split("_")[0]) for x in pageContent])
+        downloadedImgs.extend(downloadedCaseId)
+    downloadedImgs = sorted(downloadedImgs)
+    allCaseToDownload = set(validCaseToDownload).difference(set(downloadedImgs))
+    allCaseToDownload = sorted(allCaseToDownload)
     for i in range(0, len(allCaseToDownload), batchSize):
         downloadTaskbatch.append(allCaseToDownload[i : i + batchSize])
     Parallel(n_jobs=workerNum)(
