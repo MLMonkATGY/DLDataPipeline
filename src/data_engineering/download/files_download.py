@@ -20,6 +20,7 @@ def download_worker(caseIdList, outputDir):
     kwrgs = {
         "endpoint_url": "http://localhost:8333",
     }
+    bucketName = "raw_imgs"
     cli = boto3.client("s3", **kwrgs)
     successiveFailure = 0
     print(f"start : {caseIdList[0]}")
@@ -44,7 +45,12 @@ def download_worker(caseIdList, outputDir):
 
 
 if __name__ == "__main__":
-    bucketName = "raw_imgs"
+    kwrgs = {
+        "endpoint_url": "http://192.168.1.4:8333",
+        "aws_access_key_id": "",
+        "aws_secret_access_key": "",
+    }
+
     cli = boto3.client("s3", **kwrgs)
     # cli.create_bucket(Bucket=bucketName)
     outputDir = r""
