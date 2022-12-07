@@ -42,7 +42,7 @@ if __name__ == "__main__":
     outputDir = r"D:\tmp_download"
     os.makedirs(outputDir, exist_ok=True)
     localFiles = os.listdir(outputDir)
-    localFilesCaseId = [int(x.split("."))for x in localFiles]
+    localFilesCaseId = [int(x.split(".")[0])for x in localFiles]
     wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
     bucket2 = "scope_case"
     caseDf = wr.s3.read_parquet(
