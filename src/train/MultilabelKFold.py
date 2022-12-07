@@ -405,40 +405,10 @@ def trainEval(trainFile, valFile, kfoldId):
         # limit_val_batches=5,
         # limit_predict_batches=100,
     )
-    trainer2 = pl.Trainer(
-        # accumulate_grad_batches=5,
-        default_root_dir=f"./outputs/{trainParams.localSaveDir}",
-        max_epochs=trainParams.maxEpoch,
-        accelerator="gpu",
-        devices=1,
-        check_val_every_n_epoch=trainParams.check_val_every_n_epoch,
-        num_sanity_val_steps=0,
-        benchmark=True,
-        precision=trainParams.trainingPrecision,
-        logger=logger,
-        log_every_n_steps=100,
-        callbacks=[checkpoint_callback],
-        detect_anomaly=False,
-        limit_train_batches=200,
-        # limit_val_batches=100,
-        # limit_predict_batches=100,
-    )
 
     trainer1.fit(
         trainProcessModel, train_dataloaders=trainLoader, val_dataloaders=valLoader
     )
-    # trainLoader, valLoader, testLoader = GetDataloaders(
-    #     trainFile, valFile, isFinetune=True
-    # )
-    # for param in model.features.parameters():
-    #     param.requires_grad = False
-    # trainProcessModel = ProcessModel(
-    #     model, isFineTune=True, pos_weight=trainLoader.dataset.allPosWeight
-    # )
-
-    # trainer2.fit(
-    #     trainProcessModel, train_dataloaders=trainLoader, val_dataloaders=valLoader
-    # )
     predictions = trainer1.predict(trainProcessModel, testLoader)
 
     displayLogger.success("Started Uploading Best Checkpoints..")
@@ -459,11 +429,8 @@ def trainEval(trainFile, valFile, kfoldId):
 def BalanceSampling(srcDf, targetPart):
     labelDistribDf = srcDf[targetPart].value_counts().reset_index()
     smallestClassSize = labelDistribDf[targetPart].min()
-    # print(srcDf.index)
     srcDf2 = srcDf.groupby(targetPart).sample(n=smallestClassSize).reset_index()
-    # print(srcDf2.index)
 
-    # print(srcDf2[targetPart].value_counts())
     return srcDf2
 
 
