@@ -39,8 +39,10 @@ if __name__ == "__main__":
 
     cli = boto3.client("s3", **kwrgs)
     # cli.create_bucket(Bucket=bucketName)
-    outputDir = r"./"
+    outputDir = r"D:\tmp_download"
     os.makedirs(outputDir, exist_ok=True)
+    localFiles = os.listdir(outputDir)
+    localFilesCaseId = [int(x.split("."))for x in localFiles]
     wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
     bucket2 = "scope_case"
     caseDf = wr.s3.read_parquet(
@@ -50,21 +52,25 @@ if __name__ == "__main__":
     caseDf = caseDf[caseDf["Vehicle_Type"] == targetVehicleType]
     validCaseToDownload = caseDf["CaseID"].unique().tolist()
     downloadTaskbatch = []
-    batchSize = 50
-    workerNum = 1
+    batchSize = 20
+    workerNum = 5
     downloadedImgs = []
     paginator = cli.get_paginator("list_objects_v2")
     operation_parameters = {"Bucket": "raw_imgs"}
     page_iterator = paginator.paginate(**operation_parameters)
     for page in tqdm(page_iterator):
         pageContent = page["Contents"]
-        downloadedCaseId = set([int(x["Key"].split("_")[0]) for x in pageContent])
+        downloadedCaseId = set([int(x["Key"].split("_")[0])
+                               for x in pageContent])
         downloadedImgs.extend(downloadedCaseId)
     downloadedImgs = sorted(downloadedImgs)
-    allCaseToDownload = set(validCaseToDownload).difference(set(downloadedImgs))
+    allCaseToDownload = set(
+        validCaseToDownload).difference(set(downloadedImgs))
+    allCaseToDownload = allCaseToDownload.difference(set(localFilesCaseId))
     allCaseToDownload = sorted(allCaseToDownload)
+
     for i in range(0, len(allCaseToDownload), batchSize):
-        downloadTaskbatch.append(allCaseToDownload[i : i + batchSize])
+        downloadTaskbatch.append(allCaseToDownload[i: i + batchSize])
     Parallel(n_jobs=workerNum)(
         delayed(download_worker)(batchTask, outputDir)
         for batchTask in tqdm(downloadTaskbatch, desc="batch")
