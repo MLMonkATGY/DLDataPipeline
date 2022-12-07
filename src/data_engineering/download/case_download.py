@@ -35,6 +35,7 @@ def download_worker(caseIdList):
         # "Username": "aaa",
     }
     cli = boto3.client("s3", **kwrgs)
+
     successiveFailure = 0
     print(f"start : {caseIdList[0]}")
     for caseId in tqdm(caseIdList, desc="download"):
@@ -59,7 +60,7 @@ if __name__ == "__main__":
     cli = boto3.client("s3", **kwrgs)
     # cli.create_bucket(Bucket=bucketName)
     buckets = cli.list_buckets()
-    paginator = cli.get_paginator("list_objects")
+    paginator = cli.get_paginator("list_objects_v2")
     operation_parameters = {"Bucket": bucketName, "Prefix": "case_"}
     page_iterator = paginator.paginate(**operation_parameters)
     allDownloadedCase = []
