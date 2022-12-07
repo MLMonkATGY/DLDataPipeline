@@ -18,7 +18,7 @@ def download_worker(caseIdList, outputDir):
     s = requests.Session()
 
     kwrgs = {
-        "endpoint_url": "http://localhost:8333",
+        "endpoint_url": "http://192.168.1.4:8333",
     }
     bucketName = "raw_imgs"
     cli = boto3.client("s3", **kwrgs)
@@ -31,11 +31,11 @@ def download_worker(caseIdList, outputDir):
             page_iterator = paginator.paginate(**operation_parameters)
             for page in page_iterator:
                 if page["KeyCount"] > 0:
-                    raise Exception(f"Case file alreadu exist : {caseId}")
+                    raise Exception(f"Case file already exist : {caseId}")
                 else:
                     break
             url = f"http://10.1.1.50:4011/api/dsa/query/get_caseFiles?case_id={caseId}"
-            r = requests.get(url, allow_redirects=True)
+            r = s.get(url, allow_redirects=True)
             with open(f"{outputDir}/{caseId}.zip", "wb") as f:
                 f.write(r.content)
         except Exception as e1:
@@ -55,13 +55,14 @@ if __name__ == "__main__":
     # cli.create_bucket(Bucket=bucketName)
     outputDir = r""
     os.makedirs(outputDir, exist_ok=True)
-    endId = 14000000
     wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
     bucket2 = "scope_case"
-    caseDf = wr.s3.read_parquet(f"s3://{bucket2}/", columns=["CaseID"])
+    caseDf = wr.s3.read_parquet(f"s3://{bucket2}/", columns=["CaseID", "Vehicle_Type"])
+    targetVehicleType = "Saloon - 4 Dr"
+    caseDf = caseDf[caseDf["Vehicle_Type"] == targetVehicleType]
     allCaseToDownload = caseDf["CaseID"].unique().tolist()
     downloadTaskbatch = []
-    batchSize = 5000
+    batchSize = 50
     workerNum = 1
     for i in range(0, len(allCaseToDownload), batchSize):
         downloadTaskbatch.append(allCaseToDownload[i : i + batchSize])
