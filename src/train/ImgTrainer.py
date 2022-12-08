@@ -21,8 +21,8 @@ from tqdm import tqdm
 import numpy as np
 import copy
 from pytorch_lightning.loggers import MLFlowLogger
-from ClassifierDataset import MultilabelDataset
-from TrainClassifierParams import trainParams
+from dataset import MultilabelDataset
+from src.TrainClassifierParams import trainParams
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 from data import ImportEnv
@@ -62,6 +62,7 @@ from iterstrat.ml_stratifiers import (
     MultilabelStratifiedKFold,
     MultilabelStratifiedShuffleSplit,
 )
+import awswrangler as wr
 
 
 class FocalLoss2d(torch.nn.modules.loss._WeightedLoss):
@@ -136,7 +137,7 @@ def create_model():
     return model
 
 
-def GetDataloaders(trainFile, valFile, isFinetune=False):
+def get_dataloader(y_train, y_test):
     trainTransform = A.Compose(
         [
             A.LongestMaxSize(trainParams.imgSize),
@@ -167,9 +168,7 @@ def GetDataloaders(trainFile, valFile, isFinetune=False):
             ToTensorV2(),
         ]
     )
-    trainDs = MultilabelDataset(
-        trainParams.srcAnnFile, trainParams.targetPart, trainTransform, trainFile
-    )
+    trainDs = MultilabelDataset(y_train, trainTransform)
 
     trainLoader = DataLoader2(
         trainDs,
@@ -179,29 +178,25 @@ def GetDataloaders(trainFile, valFile, isFinetune=False):
         pin_memory=True,
         persistent_workers=True,
     )
-    evalDs = MultilabelDataset(
-        trainParams.srcAnnFile, trainParams.targetPart, evalTransform, valFile
-    )
+    evalDs = MultilabelDataset(y_test, evalTransform)
     evalLoader = DataLoader2(
         evalDs,
         shuffle=False,
         batch_size=trainParams.trainBatchSize * 2,
         num_workers=trainParams.trainCPUWorker,
     )
-    testDs = MultilabelDataset(
-        trainParams.srcAnnFile, trainParams.targetPart, evalTransform, valFile
-    )
+    testDs = MultilabelDataset(y_test, evalTransform)
     testLoader = DataLoader2(
         testDs,
         shuffle=False,
-        batch_size=1,
+        batch_size=trainParams.trainBatchSize * 2,
         num_workers=trainParams.trainCPUWorker,
     )
-    assert set(evalDs.df["Filename"].unique().tolist()).isdisjoint(
-        set(trainDs.df["Filename"].unique().tolist())
+    assert set(evalDs.df["filename"].unique().tolist()).isdisjoint(
+        set(trainDs.df["filename"].unique().tolist())
     )
-    assert set(testDs.df["Filename"].unique().tolist()).isdisjoint(
-        set(trainDs.df["Filename"].unique().tolist())
+    assert set(testDs.df["filename"].unique().tolist()).isdisjoint(
+        set(trainDs.df["filename"].unique().tolist())
     )
     return trainLoader, evalLoader, testLoader
 
@@ -348,27 +343,30 @@ class ProcessModel(pl.LightningModule):
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         imgs = batch["img"]
-        file = batch["file"]
-        rawParts = batch["parts"]
-        parts = [x[0] for x in rawParts]
-        labels = batch["target"].cpu().numpy().squeeze(0)
+        files = batch["file"]
+        parts = [x[0] for x in batch["parts"]]
+        labels = batch["target"].cpu().numpy()
         logit = self(imgs)
-        preds = (logit > self.posThreshold).cpu().numpy().squeeze(0)
+        preds = (logit > self.posThreshold).cpu().numpy()
         # predProbNp = predProb.cpu().numpy().tolist()[0]
-        info = {
-            "file": file,
-        }
-        for part, pred, label in zip(parts, preds, labels):
-            info[f"pred_{part}"] = pred
-            info[f"gt_{part}"] = True if label == 1 else False
+        allDf = []
+        for p, f, conf, gt in zip(preds, files, logit, labels):
+            info = {
+                "file": f,
+                "pred": p.tolist(),
+                "conf": conf.cpu().numpy().tolist(),
+                "parts": parts,
+                "gt": gt.tolist(),
+            }
+            df = pd.DataFrame(info)
+            allDf.append(df)
 
-        return info
+        predDf = pd.concat(allDf)
+        return predDf
 
 
-def trainEval(trainFile, valFile, kfoldId):
-    trainLoader, valLoader, testLoader = GetDataloaders(
-        trainFile, valFile, isFinetune=False
-    )
+def train_eval(y_train, y_test, kfoldId):
+    trainLoader, valLoader, testLoader = get_dataloader(y_train, y_test)
 
     logger = MLFlowLogger(
         experiment_name=trainParams.experimentName,
@@ -408,7 +406,10 @@ def trainEval(trainFile, valFile, kfoldId):
     trainer1.fit(
         trainProcessModel, train_dataloaders=trainLoader, val_dataloaders=valLoader
     )
-    predictions = trainer1.predict(trainProcessModel, testLoader)
+    batchPredDf = trainer1.predict(trainProcessModel, testLoader)
+    completePredDf = pd.concat(batchPredDf)
+    print(completePredDf)
+    print(len(completePredDf["file"].unique().tolist()))
 
     displayLogger.success("Started Uploading Best Checkpoints..")
     mlflowLogger: MlflowClient = trainProcessModel.logger.experiment
@@ -422,7 +423,7 @@ def trainEval(trainFile, valFile, kfoldId):
         trainProcessModel.logger.run_id,
         checkpoint_callback.dirpath.replace("/checkpoints", "/"),
     )
-    return predictions
+    return completePredDf
 
 
 def BalanceSampling(srcDf, targetPart):
@@ -452,17 +453,15 @@ def getAllPart():
     return allParts
 
 
-def StorePred(allPreds: List, targetPart: List[str], imgAngle: str):
-    run_name = f"cv_pred_{imgAngle}"
+def store_pred(completePred: pd.DataFrame):
+    run_name = f"cv_pred_{trainParams.imgAngle}"
     outputDir = pathlib.Path(os.getcwd()) / "outputs"
     os.makedirs(outputDir, exist_ok=True)
     with mlflow.start_run(experiment_id=trainParams.expId, run_name=run_name):
-        crossValPredDf = pd.json_normalize(allPreds)
-        print(crossValPredDf)
-        outputName = f"{outputDir}/cv_pred_{imgAngle}.csv"
-        crossValPredDf.to_csv(outputName)
+        outputName = f"{outputDir}/cv_pred_{trainParams.imgAngle}.csv"
+        completePred.to_csv(outputName)
         mlflow.log_artifact(outputName)
-        print(f"Completed part {imgAngle} {targetPart}")
+        print(f"Completed part {trainParams.imgAngle}")
 
 
 def GenLabelGroup(x):
@@ -478,35 +477,48 @@ def CountLabelComb(srcDf, allTargetParts):
     print(combDf)
 
 
+def get_view_filename():
+    return [
+        "front_view_left_img_labels.csv",
+        "front_view_img_labels.csv",
+        "front_view_right_img_labels.csv",
+        "rear_view_img_labels.csv",
+        "rear_view_left_img_labels.csv",
+        "rear_view_right_img_labels.csv",
+    ]
+
+
+def get_label_df(filename):
+    labelDf = wr.s3.read_csv(path=f"s3://imgs_labels/{filename}")
+    return labelDf
+
+
 if __name__ == "__main__":
-
-    imgSrcDir, labelSrcDir = GetDataDir()
-    allParts = getAllPart()
-    inputDir = labelSrcDir
-    searchImgView = f"{inputDir}/*.csv"
-    allSrcAnnFile = glob.glob(searchImgView, recursive=True)
-    for srcAnnPath in tqdm(allSrcAnnFile, desc="view"):
-        imgAngle = srcAnnPath.split("/")[-1].split("_")[1]
-        trainParams.srcAnnFile = srcAnnPath
-        trainParams.imgAngle = imgAngle
-        srcDf = pd.read_csv(trainParams.srcAnnFile)
-
-        allTargetParts = [x for x in srcDf.columns if x in allParts]
-        trainParams.runName = imgAngle
+    allViews = get_view_filename()
+    wr.config.s3_endpoint_url = "http://192.168.1.7:8333"
+    notLabels = ["CaseID", "view", "filename", "Unnamed: 0"]
+    for viewFilename in tqdm(allViews, desc="view"):
+        labelDf: pd.DataFrame = get_label_df(viewFilename)
+        allTargetParts = [x for x in labelDf.columns if x not in notLabels]
+        trainParams.runName = viewFilename
         trainParams.targetPart = allTargetParts
+        trainParams.imgAngle = viewFilename.replace("_img_labels.csv", "")
         mulitlearnStratify = MultilabelStratifiedKFold(n_splits=2, shuffle=True)
         targetPart = trainParams.targetPart
-        y = srcDf[allTargetParts]
-        X = srcDf["Path"]
+        y = labelDf[allTargetParts]
+        X = labelDf["filename"]
         # CountLabelComb(srcDf, allTargetParts)
 
         allSplit = []
-        allPreds = []
+        viewCompletePredDf = pd.DataFrame()
         for kfoldId, (train_index, test_index) in enumerate(
             mulitlearnStratify.split(X, y)
         ):
             X_train, X_test = X[train_index], X[test_index]
             y_train, y_test = y.loc[train_index], y.loc[test_index]
+            y_train["filename"] = X_train
+            y_test["filename"] = X_test
+
             allSplit.append(
                 {
                     "X_train": X_train,
@@ -516,6 +528,6 @@ if __name__ == "__main__":
                 }
             )
 
-            predictions = trainEval(X_train, X_test, kfoldId + 1)
-            allPreds.extend(predictions)
-        StorePred(allPreds, targetPart, imgAngle)
+            predDf = train_eval(y_train, y_test, kfoldId + 1)
+            viewCompletePredDf = pd.concat([viewCompletePredDf, predDf])
+        store_pred(viewCompletePredDf)

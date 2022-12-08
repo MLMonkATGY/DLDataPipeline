@@ -10,7 +10,6 @@ import torchvision
 import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 import cv2
-from TrainClassifierParams import trainParams
 
 
 class DmgClassifierDataset(Dataset):

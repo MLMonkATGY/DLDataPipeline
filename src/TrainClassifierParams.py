@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=False)
 class TrainClassiferParams:
+    srcImgDir: str
     srcAnnFile: str
     imgSize: int
     trainBatchSize: int
@@ -28,6 +29,7 @@ class TrainClassiferParams:
 
 
 trainParams = TrainClassiferParams(
+    srcImgDir="/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/imgs",
     srcAnnFile="",
     runName="wheel",
     targetPart="wheel",
@@ -36,8 +38,8 @@ trainParams = TrainClassiferParams(
     imgSize=300,
     trainBatchSize=100,
     trainCPUWorker=10,
-    experimentName="dmg_multilabel_high_resolution",
-    expId=74,
+    experimentName="multilabel_v3",
+    expId=75,
     localSaveDir="mlruns",
     saveTopNBest=1,
     check_val_every_n_epoch=5,
