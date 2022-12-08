@@ -30,7 +30,7 @@ src/data_engineering/GetImgsDf.ipynb
 
 src/feature/MultiviewMultilabelDf.ipynb
 
-## 8. Train multilabel image classification
+## 8. Train multilabel image classification with new exp name
 
 src/train/ImgTrainer.py
 
