@@ -40,7 +40,7 @@ def get_view_names():
     ]
 
 
-def get_cv_pred():
+def get_cv_pred(expId):
     views = get_view_names()
     outputDir = pathlib.Path(
         "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/results"
@@ -50,7 +50,7 @@ def get_cv_pred():
         runName = f"cv_pred_{view}"
         query = f"tags.`mlflow.runName`='{runName}'"
         runs = MlflowClient().search_runs(
-            experiment_ids=["75"],
+            experiment_ids=[expId],
             filter_string=query,
             order_by=["attribute.start_time DESC"],
             max_results=1,
@@ -70,7 +70,7 @@ def combine_df():
         df["view"] = viewName
         allDf.append(df)
     completeDf = pd.concat(allDf)
-    # print(df[["CaseID"]])
+    completeDf.dropna(subset="file", inplace=True)
     return completeDf
 
 
@@ -84,6 +84,7 @@ def get_raw_multilabel_df():
 def ensemble_pred(completeDf: pd.DataFrame):
     allParts = completeDf["parts"].unique().tolist()
     allViews = completeDf["view"].unique().tolist()
+    print(completeDf["file"])
     completeDf["CaseID"] = completeDf["file"].apply(
         lambda x: int(x.split("/")[-1].split("_")[0])
     )
@@ -139,6 +140,7 @@ def ensemble_pred(completeDf: pd.DataFrame):
 
 
 if __name__ == "__main__":
-    # get_cv_pred()
+    expId = 75
+    get_cv_pred(expId)
     completePredDf = combine_df()
     ensemble_pred(completePredDf)
