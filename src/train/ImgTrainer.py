@@ -225,7 +225,9 @@ class ProcessModel(pl.LightningModule):
             num_classes=len(trainParams.targetPart), multiclass=False
         ).to(self.device)
 
-        self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(pos_weight))
+        self.criterion = torch.nn.BCEWithLogitsLoss(
+            pos_weight=torch.tensor(pos_weight) * trainParams.posWeightScaler
+        )
         self.sigmoid = torch.nn.Sigmoid()
         self.posThreshold = trainParams.posThreshold
         # self.save_hyperparameters()
