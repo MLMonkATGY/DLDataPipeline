@@ -17,7 +17,12 @@ kwrgs = {
     "endpoint_url": "http://192.168.1.4:8333",
 }
 bucketName = "raw_imgs"
-cli = boto3.client("s3", **kwrgs)
+cli = boto3.client(
+    "s3",
+    **{
+        "endpoint_url": "http://192.168.1.4:8333",
+    }
+)
 paginator = cli.get_paginator("list_objects_v2")
 operation_parameters = {"Bucket": bucketName}
 page_iterator = paginator.paginate(**operation_parameters)
