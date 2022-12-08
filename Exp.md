@@ -52,6 +52,10 @@ src/analysis/Analyse.ipynb
 
 ## Optimization element order
 
+### Label clustering
+
+Remove all low performance parts into a separate group like misc
+
 ### Loss Function (Focal vs BCE)
 
 BCE
