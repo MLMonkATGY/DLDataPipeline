@@ -68,6 +68,9 @@ import optuna
 
 wr.config.s3_endpoint_url = "http://192.168.1.7:8333"
 
+np.random.seed(trainParams.randomSeed)
+torch.manual_seed(trainParams.randomSeed)
+
 
 class FocalLoss2d(torch.nn.modules.loss._WeightedLoss):
     def __init__(
@@ -186,14 +189,14 @@ def get_dataloader(y_train, y_test):
     evalLoader = DataLoader2(
         evalDs,
         shuffle=False,
-        batch_size=trainParams.trainBatchSize * 2,
+        batch_size=trainParams.trainBatchSize,
         num_workers=trainParams.trainCPUWorker,
     )
     testDs = MultilabelDataset(y_test, evalTransform)
     testLoader = DataLoader2(
         testDs,
         shuffle=False,
-        batch_size=trainParams.trainBatchSize * 2,
+        batch_size=trainParams.trainBatchSize,
         num_workers=trainParams.trainCPUWorker,
     )
     assert set(evalDs.df["filename"].unique().tolist()).isdisjoint(
@@ -206,13 +209,14 @@ def get_dataloader(y_train, y_test):
 
 
 class ProcessModel(pl.LightningModule):
-    def __init__(self, model, isFineTune=False, pos_weight=None):
+    def __init__(self, model, pos_weight=None):
         super(
             ProcessModel,
             self,
         ).__init__()
+        pl.seed_everything(trainParams.randomSeed)
+
         self.model = model
-        self.isFinetune = isFineTune
         self.testAccMetric = MultilabelAccuracy(num_labels=len(trainParams.targetPart))
         self.trainAccMetric = MultilabelAccuracy(num_labels=len(trainParams.targetPart))
         self.testConfMat = MultilabelConfusionMatrix(
@@ -229,10 +233,9 @@ class ProcessModel(pl.LightningModule):
             num_classes=len(trainParams.targetPart), multiclass=False
         ).to(self.device)
 
-        self.criterion = torch.nn.BCEWithLogitsLoss(
-            # pos_weight=torch.tensor(pos_weight) * trainParams.posWeightScaler
-        )
+        self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight)
         self.sigmoid = torch.nn.Sigmoid()
+        self.current_pos_weight = pos_weight
         self.posThreshold = trainParams.posThreshold
         # self.save_hyperparameters()
 
@@ -369,13 +372,15 @@ class ProcessModel(pl.LightningModule):
         return predDf
 
 
-def train_eval(trainLoader, valLoader, testLoader, kfoldId, posWeight):
+def train_eval(
+    trainLoader, valLoader, testLoader, posWeight: List[float], kfoldId: int
+):
     logger = MLFlowLogger(
         experiment_name=trainParams.experimentName,
         tracking_uri=os.getenv("MLFLOW_TRACKING_URI"),
         run_name=f"{trainParams.imgAngle}_{kfoldId}",
     )
-
+    trainParams.currentPosWeight = posWeight
     checkpoint_callback = ModelCheckpoint(
         monitor="subset",
         save_top_k=trainParams.saveTopNBest,
@@ -383,7 +388,8 @@ def train_eval(trainLoader, valLoader, testLoader, kfoldId, posWeight):
         filename="{subset:.2f}-{e_tp:.2f}--{e_tn:.2f}",
     )
     model = create_model()
-    trainProcessModel = ProcessModel(model, isFineTune=False, pos_weight=posWeight)
+
+    trainProcessModel = ProcessModel(model, pos_weight=posWeight)
     trainer1 = pl.Trainer(
         # accumulate_grad_batches=10,
         default_root_dir=f"./outputs/{trainParams.localSaveDir}",
@@ -398,9 +404,9 @@ def train_eval(trainLoader, valLoader, testLoader, kfoldId, posWeight):
         log_every_n_steps=30,
         callbacks=[checkpoint_callback],
         detect_anomaly=False,
-        # limit_train_batches=200,
-        # limit_val_batches=5,
-        # limit_predict_batches=100,
+        # limit_train_batches=10,
+        # limit_val_batches=30,
+        # limit_predict_batches=30,
     )
 
     trainer1.fit(
@@ -503,15 +509,42 @@ def gen_dataset(viewFilename, notLabels):
     return mulitlearnStratify, X, y, allTargetParts
 
 
-def fit(trial, viewFilename):
+def get_pos_weight(trial, allColName, viewFilename) -> List[float]:
+    if trial:
+        posWeight = [
+            trial.suggest_float(f"pos_weight_{allColName[x]}", 0.05, 20, log=True)
+            for x in range(len(allColName))
+        ]
+    else:
+        study_name = viewFilename.split(".")[0]
+        baseDir = (
+            "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/hyperparams"
+        )
+        dbFile = f"sqlite:///{baseDir}/{trainParams.vehicleType}_{study_name}.db"
+        study = optuna.load_study(study_name=study_name, storage=dbFile)
+        df: pd.DataFrame = study.trials_dataframe(
+            attrs=("number", "value", "params", "state")
+        )
+        majorMetricsInOrder = ["values_1", "values_2", "values_0", "values_3"]
+        df.sort_values(by=majorMetricsInOrder, ascending=False, inplace=True)
+        print(df[majorMetricsInOrder])
+        colData = [f"params_pos_weight_{x}" for x in allColName]
+        print(df[colData])
+        posWeight = df[colData].head(1).values.tolist()[0]
+        return posWeight
+
+
+def fit(
+    viewFilename,
+    trial=None,
+):
     notLabels = ["CaseID", "view", "filename", "Unnamed: 0"]
 
     mulitlearnStratify, X, y, allTargetParts = gen_dataset(viewFilename, notLabels)
     allColName = y.columns.tolist()
-    posWeight = [
-        trial.suggest_float(f"pos_weight_{allColName[x]}", 0.05, 20, log=True)
-        for x in range(len(allColName))
-    ]
+    trainParams.currentColName = allColName
+    posWeight = get_pos_weight(trial, allColName, viewFilename)
+
     viewCompletePredDf = pd.DataFrame()
     for kfoldId, (train_index, test_index) in enumerate(mulitlearnStratify.split(X, y)):
         X_train, X_test = X[train_index], X[test_index]
@@ -541,16 +574,11 @@ def train_all_views():
         fit(viewFilename)
 
 
-targetFilename = "front_view_img_labels.csv"
-
-
-def func2(trial):
-    return fit(trial, targetFilename)
-
-
-def tune():
+def tune(targetFilename):
     study_name = targetFilename.split(".")[0]  # Unique identifier of the study.
-    storage_name = "sqlite:///{}.db".format(study_name)
+    storage_name = f"sqlite:////home/alextay96/Desktop/new_workspace/DLDataPipeline/data/hyperparams/{trainParams.vehicleType}_{study_name}.db".format(
+        study_name
+    )
     print(f"Study name : {storage_name}")
     study = optuna.create_study(
         study_name=study_name,
@@ -558,13 +586,26 @@ def tune():
             "maximize",
             "maximize",
             "maximize",
+            "maximize",
+            "maximize",
         ],
         storage=storage_name,
         load_if_exists=True,
     )
-    study.optimize(func2, n_trials=100)
+
+    def func2(trial):
+        return fit(targetFilename, trial)
+
+    study.optimize(func2, timeout=trainParams.tuningTimeout, show_progress_bar=True)
+
+
+def tune_all_view():
+    allViews = get_view_filename()
+    for viewFilename in tqdm(allViews, desc="view"):
+        viewName = viewFilename
+        tune(viewFilename)
 
 
 if __name__ == "__main__":
     # train_all_views()
-    tune()
+    tune_all_view()

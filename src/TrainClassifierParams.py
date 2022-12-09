@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import List
 
 
 @dataclass(frozen=False)
@@ -25,10 +26,14 @@ class TrainClassiferParams:
     dmg_label_count: int
     expId: int
     posThreshold: float
-    posWeightScaler: float
+    vehicleType: str
+    tuningTimeout: int
+    currentPosWeight: List[float]
+    currentColName: List[str]
 
 
 trainParams = TrainClassiferParams(
+    vehicleType="Saloon",
     srcImgDir="/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/imgs",
     srcAnnFile="",
     runName="wheel",
@@ -38,8 +43,8 @@ trainParams = TrainClassiferParams(
     imgSize=300,
     trainBatchSize=100,
     trainCPUWorker=10,
-    experimentName="multilabel_v4_tune_pos_weight",
-    expId=80,
+    experimentName="multilabel_v4_train_train",
+    expId=81,
     localSaveDir="mlruns",
     saveTopNBest=1,
     check_val_every_n_epoch=5,
@@ -51,5 +56,7 @@ trainParams = TrainClassiferParams(
     not_dmg_label_count=0,
     dmg_label_count=0,
     posThreshold=0.5,
-    posWeightScaler=10,
+    tuningTimeout=7200,
+    currentPosWeight=[],
+    currentColName=[],
 )
