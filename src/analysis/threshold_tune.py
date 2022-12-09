@@ -2,6 +2,7 @@ from pprint import pprint
 import mlflow
 import ujson as json
 from mlflow.tracking import MlflowClient
+from src.analysis.EnsemblePredict import get_raw_multilabel_df
 from data import ImportEnv
 import pathlib
 import os
@@ -27,41 +28,11 @@ from sklearn.metrics import (
 )
 from collections import Counter
 import awswrangler as wr
+import optuna
 
 
-def get_view_names():
-    return [
-        "front_view_left",
-        "front_view",
-        "front_view_right",
-        "rear_view",
-        "rear_view_left",
-        "rear_view_right",
-    ]
-
-
-def get_cv_pred(expId):
-    views = get_view_names()
-    outputDir = pathlib.Path(
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/results"
-    )
-    os.makedirs(outputDir, exist_ok=True)
-    for view in tqdm(views, desc="angle"):
-        runName = f"cv_pred_{view}"
-        query = f"tags.`mlflow.runName`='{runName}'"
-        runs = MlflowClient().search_runs(
-            experiment_ids=[expId],
-            filter_string=query,
-            order_by=["attribute.start_time DESC"],
-            max_results=1,
-        )
-        info = runs[0].info
-        runId = info.run_id
-        mlflow.artifacts.download_artifacts(run_id=runId, dst_path=outputDir)
-
-
-def combine_df():
-    search = "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/results/cv_pred_**.csv"
+def combine_df(srcDir):
+    search = f"{srcDir}/cv_pred_**.csv"
     allPredfile = glob.glob(search, recursive=True)
     allDf = []
     for p in allPredfile:
@@ -74,15 +45,15 @@ def combine_df():
     return completeDf
 
 
-def get_raw_multilabel_df():
-    wr.config.s3_endpoint_url = "http://192.168.1.7:8333"
-    srcBucketName = "multilabel_df"
-    labelDf = wr.s3.read_parquet(path=f"s3://{srcBucketName}/", dataset=True)
-    return labelDf
+srcDir = "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/results"
+completeDf = combine_df(srcDir)
 
 
-def ensemble_pred(completeDf: pd.DataFrame):
+def ensemble_pred_optimize(trial):
+    x = trial.suggest_float("x", -10, 10)
+
     allParts = completeDf["parts"].unique().tolist()
+    allViews = completeDf["view"].unique().tolist()
     completeDf["CaseID"] = completeDf["file"].apply(
         lambda x: int(x.split("/")[-1].split("_")[0])
     )
@@ -134,66 +105,21 @@ def ensemble_pred(completeDf: pd.DataFrame):
         "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/results/part_perf.csv"
     )
 
-    return accDf, partPredDf, allParts
+    return accDf, partPredDf
 
 
-def eval_by_parts(allParts, partPerfDf):
-    partMetrics = []
-    for part in allParts:
-        gtCol = partPerfDf[f"gt_{part}"].values
-        predCol = partPerfDf[f"pred_{part}"].values
-        # posGt = gtCol[gtCol == 1]
-        posGtCount = np.count_nonzero(gtCol == 1)
-        negGtCount = np.count_nonzero(gtCol == 0)
-
-        tp = np.count_nonzero(predCol[gtCol == 1] == 1) / posGtCount
-        tn = np.count_nonzero(predCol[gtCol == 0] == 0) / negGtCount
-        fp = np.count_nonzero(predCol[gtCol == 0] == 1) / negGtCount
-        fn = np.count_nonzero(predCol[gtCol == 1] == 0) / posGtCount
-        assert 0.99 < tp + fn < 1.01
-        assert 0.99 < tn + fp < 1.01
-        precision = tp / (tp + fp)
-        recall = tp / (tp + fn)
-        acc = (tp + tn) / (tp + tn + fp + fn)
-        partMetrics.append(
-            {
-                "part": part,
-                "tp": tp,
-                "tn": tn,
-                "fn": fn,
-                "fp": fp,
-                "precision": precision,
-                "recall": recall,
-                "acc": acc,
-                "gt_pos_count": posGtCount,
-                "gt_neg_count": negGtCount,
-                "gt_pos_ratio": posGtCount / (posGtCount + negGtCount),
-            }
-        )
-
-    partEvalMetrics = pd.json_normalize(partMetrics)
-    partEvalMetrics.to_csv(
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/results/part_metrics.csv"
-    )
-    avgTp = partEvalMetrics["tp"].mean()
-    avgTn = partEvalMetrics["tn"].mean()
-    avgAcc = partEvalMetrics["acc"].mean()
-    minTp = partEvalMetrics["tp"].min()
-    minTn = partEvalMetrics["tn"].min()
-
-    return {
-        "avgTp" : avgTp,
-        "avgTn" : avgTn,
-        "avgAcc" : avgAcc,
-        "minTp" : minTp,
-        "minTn" : minTn,
-
-    }
+def objective(trial):
+    x = trial.suggest_float("x", -10, 10)
+    return (x - 2) ** 2
 
 
 if __name__ == "__main__":
-    expId = 79
-    get_cv_pred(expId)
-    completePredDf = combine_df()
-    ensemble_pred(completePredDf)
-    
+
+    study_name = "example-study"  # Unique identifier of the study.
+    storage_name = "sqlite:///{}.db".format(study_name)
+    study = optuna.load_study(study_name=study_name, storage=storage_name)
+    study.optimize(
+        objective,
+        n_trials=100,
+        n_jobs=5,
+    )

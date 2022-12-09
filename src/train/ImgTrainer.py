@@ -21,6 +21,7 @@ from tqdm import tqdm
 import numpy as np
 import copy
 from pytorch_lightning.loggers import MLFlowLogger
+from src.analysis.EnsemblePredict import ensemble_pred, eval_by_parts
 from dataset import MultilabelDataset
 from src.TrainClassifierParams import trainParams
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -63,6 +64,9 @@ from iterstrat.ml_stratifiers import (
     MultilabelStratifiedShuffleSplit,
 )
 import awswrangler as wr
+import optuna
+
+wr.config.s3_endpoint_url = "http://192.168.1.7:8333"
 
 
 class FocalLoss2d(torch.nn.modules.loss._WeightedLoss):
@@ -226,7 +230,7 @@ class ProcessModel(pl.LightningModule):
         ).to(self.device)
 
         self.criterion = torch.nn.BCEWithLogitsLoss(
-            pos_weight=torch.tensor(pos_weight) * trainParams.posWeightScaler
+            # pos_weight=torch.tensor(pos_weight) * trainParams.posWeightScaler
         )
         self.sigmoid = torch.nn.Sigmoid()
         self.posThreshold = trainParams.posThreshold
@@ -234,7 +238,7 @@ class ProcessModel(pl.LightningModule):
 
     def configure_optimizers(self):
 
-        return torch.optim.Adam(self.model.parameters(), trainParams.learningRate)
+        return torch.optim.Adam(self.parameters(), trainParams.learningRate)
 
     def forward(self, imgs):
         logit = self.model(imgs)
@@ -365,9 +369,7 @@ class ProcessModel(pl.LightningModule):
         return predDf
 
 
-def train_eval(y_train, y_test, kfoldId):
-    trainLoader, valLoader, testLoader = get_dataloader(y_train, y_test)
-
+def train_eval(trainLoader, valLoader, testLoader, kfoldId, posWeight):
     logger = MLFlowLogger(
         experiment_name=trainParams.experimentName,
         tracking_uri=os.getenv("MLFLOW_TRACKING_URI"),
@@ -381,9 +383,7 @@ def train_eval(y_train, y_test, kfoldId):
         filename="{subset:.2f}-{e_tp:.2f}--{e_tn:.2f}",
     )
     model = create_model()
-    trainProcessModel = ProcessModel(
-        model, isFineTune=False, pos_weight=trainLoader.dataset.allPosWeight
-    )
+    trainProcessModel = ProcessModel(model, isFineTune=False, pos_weight=posWeight)
     trainer1 = pl.Trainer(
         # accumulate_grad_batches=10,
         default_root_dir=f"./outputs/{trainParams.localSaveDir}",
@@ -408,8 +408,6 @@ def train_eval(y_train, y_test, kfoldId):
     )
     batchPredDf = trainer1.predict(trainProcessModel, testLoader)
     completePredDf = pd.concat(batchPredDf)
-    print(completePredDf)
-    print(len(completePredDf["file"].unique().tolist()))
 
     displayLogger.success("Started Uploading Best Checkpoints..")
     mlflowLogger: MlflowClient = trainProcessModel.logger.experiment
@@ -493,41 +491,80 @@ def get_label_df(filename):
     return labelDf
 
 
-if __name__ == "__main__":
-    allViews = get_view_filename()
-    wr.config.s3_endpoint_url = "http://192.168.1.7:8333"
+def gen_dataset(viewFilename, notLabels):
+    labelDf: pd.DataFrame = get_label_df(viewFilename)
+    allTargetParts = [x for x in labelDf.columns if x not in notLabels]
+    trainParams.runName = viewFilename
+    trainParams.targetPart = allTargetParts
+    trainParams.imgAngle = viewFilename.replace("_img_labels.csv", "")
+    mulitlearnStratify = MultilabelStratifiedKFold(n_splits=2, shuffle=True)
+    y = labelDf[allTargetParts]
+    X = labelDf["filename"]
+    return mulitlearnStratify, X, y, allTargetParts
+
+
+def fit(trial, viewFilename):
     notLabels = ["CaseID", "view", "filename", "Unnamed: 0"]
+
+    mulitlearnStratify, X, y, allTargetParts = gen_dataset(viewFilename, notLabels)
+    allColName = y.columns.tolist()
+    posWeight = [
+        trial.suggest_float(f"pos_weight_{allColName[x]}", 0.05, 20, log=True)
+        for x in range(len(allColName))
+    ]
+    viewCompletePredDf = pd.DataFrame()
+    for kfoldId, (train_index, test_index) in enumerate(mulitlearnStratify.split(X, y)):
+        X_train, X_test = X[train_index], X[test_index]
+        y_train, y_test = y.loc[train_index], y.loc[test_index]
+        y_train["filename"] = X_train
+        y_test["filename"] = X_test
+        trainLoader, valLoader, testLoader = get_dataloader(y_train, y_test)
+        predDf = train_eval(trainLoader, valLoader, testLoader, posWeight, kfoldId + 1)
+        viewCompletePredDf = pd.concat([viewCompletePredDf, predDf])
+    store_pred(viewCompletePredDf)
+    accDf, partPredDf, allParts = ensemble_pred(viewCompletePredDf)
+    partMetrics = eval_by_parts(allParts, partPredDf)
+    subset_acc = accDf["subset_acc"].mean()
+    partMetrics["subset_acc"] = subset_acc
+    avgTp = partMetrics["avgTp"]
+    avgTn = partMetrics["avgTn"]
+    avgAcc = partMetrics["avgAcc"]
+    minTp = partMetrics["minTp"]
+    minTn = partMetrics["minTn"]
+
+    return subset_acc, avgTp, avgTn, minTp, minTn
+
+
+def train_all_views():
+    allViews = get_view_filename()
     for viewFilename in tqdm(allViews, desc="view"):
-        labelDf: pd.DataFrame = get_label_df(viewFilename)
-        allTargetParts = [x for x in labelDf.columns if x not in notLabels]
-        trainParams.runName = viewFilename
-        trainParams.targetPart = allTargetParts
-        trainParams.imgAngle = viewFilename.replace("_img_labels.csv", "")
-        mulitlearnStratify = MultilabelStratifiedKFold(n_splits=2, shuffle=True)
-        targetPart = trainParams.targetPart
-        y = labelDf[allTargetParts]
-        X = labelDf["filename"]
-        # CountLabelComb(srcDf, allTargetParts)
+        fit(viewFilename)
 
-        allSplit = []
-        viewCompletePredDf = pd.DataFrame()
-        for kfoldId, (train_index, test_index) in enumerate(
-            mulitlearnStratify.split(X, y)
-        ):
-            X_train, X_test = X[train_index], X[test_index]
-            y_train, y_test = y.loc[train_index], y.loc[test_index]
-            y_train["filename"] = X_train
-            y_test["filename"] = X_test
 
-            allSplit.append(
-                {
-                    "X_train": X_train,
-                    "X_test": X_test,
-                    "y_train": y_train,
-                    "y_test": y_test,
-                }
-            )
+targetFilename = "front_view_img_labels.csv"
 
-            predDf = train_eval(y_train, y_test, kfoldId + 1)
-            viewCompletePredDf = pd.concat([viewCompletePredDf, predDf])
-        store_pred(viewCompletePredDf)
+
+def func2(trial):
+    return fit(trial, targetFilename)
+
+
+def tune():
+    study_name = targetFilename.split(".")[0]  # Unique identifier of the study.
+    storage_name = "sqlite:///{}.db".format(study_name)
+    print(f"Study name : {storage_name}")
+    study = optuna.create_study(
+        study_name=study_name,
+        directions=[
+            "maximize",
+            "maximize",
+            "maximize",
+        ],
+        storage=storage_name,
+        load_if_exists=True,
+    )
+    study.optimize(func2, n_trials=100)
+
+
+if __name__ == "__main__":
+    # train_all_views()
+    tune()

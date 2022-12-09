@@ -63,6 +63,7 @@ BCE
 ### Image Input Size (300 vs 640)
 
 300
+No improvement seen when using 640
 
 ### Data Augmentation (Present vs Absent)
 
