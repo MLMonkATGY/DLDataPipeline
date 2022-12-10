@@ -139,6 +139,9 @@ def ensemble_pred(completeDf: pd.DataFrame):
 
 def eval_by_parts(allParts, partPerfDf):
     partMetrics = []
+    old_err_state = np.seterr(divide='raise')
+    np.seterr(divide='ignore')
+
     for part in allParts:
         gtCol = partPerfDf[f"gt_{part}"].values
         predCol = partPerfDf[f"pred_{part}"].values
@@ -152,8 +155,8 @@ def eval_by_parts(allParts, partPerfDf):
         fn = np.count_nonzero(predCol[gtCol == 1] == 0) / posGtCount
         assert 0.99 < tp + fn < 1.01
         assert 0.99 < tn + fp < 1.01
-        precision = tp / (tp + fp)
-        recall = tp / (tp + fn)
+        precision = np.divide(tp, (tp + fp))
+        recall = np.divide(tp , (tp + fn))
         acc = (tp + tn) / (tp + tn + fp + fn)
         partMetrics.append(
             {
@@ -180,7 +183,7 @@ def eval_by_parts(allParts, partPerfDf):
     avgAcc = partEvalMetrics["acc"].mean()
     minTp = partEvalMetrics["tp"].min()
     minTn = partEvalMetrics["tn"].min()
-
+    np.seterr(**old_err_state)
     return {
         "avgTp" : avgTp,
         "avgTn" : avgTn,
@@ -192,7 +195,7 @@ def eval_by_parts(allParts, partPerfDf):
 
 
 if __name__ == "__main__":
-    expId = 81
+    expId = 84
     get_cv_pred(expId)
     completePredDf = combine_df()
     ensemble_pred(completePredDf)

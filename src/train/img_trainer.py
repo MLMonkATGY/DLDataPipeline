@@ -233,7 +233,9 @@ class ProcessModel(pl.LightningModule):
             num_classes=len(trainParams.targetPart), multiclass=False
         ).to(self.device)
 
-        self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight)
+        self.criterion = torch.nn.BCEWithLogitsLoss(
+            pos_weight=torch.tensor(pos_weight) * 10
+        )
         self.sigmoid = torch.nn.Sigmoid()
         self.current_pos_weight = pos_weight
         self.posThreshold = trainParams.posThreshold
@@ -427,7 +429,7 @@ def train_eval(
         trainProcessModel.logger.run_id,
         checkpoint_callback.dirpath.replace("/checkpoints", "/"),
     )
-    return completePredDf
+    return completePredDf, trainProcessModel.logger.experiment_id
 
 
 def BalanceSampling(srcDf, targetPart):
@@ -457,11 +459,11 @@ def getAllPart():
     return allParts
 
 
-def store_pred(completePred: pd.DataFrame):
+def store_pred(completePred: pd.DataFrame, expId: int):
     run_name = f"cv_pred_{trainParams.imgAngle}"
     outputDir = pathlib.Path(os.getcwd()) / "outputs"
     os.makedirs(outputDir, exist_ok=True)
-    with mlflow.start_run(experiment_id=trainParams.expId, run_name=run_name):
+    with mlflow.start_run(experiment_id=expId, run_name=run_name):
         outputName = f"{outputDir}/cv_pred_{trainParams.imgAngle}.csv"
         completePred.to_csv(outputName)
         mlflow.log_artifact(outputName)
@@ -482,7 +484,7 @@ def CountLabelComb(srcDf, allTargetParts):
 
 
 def get_view_filename():
-    return [
+    base = [
         "front_view_left_img_labels.csv",
         "front_view_img_labels.csv",
         "front_view_right_img_labels.csv",
@@ -490,6 +492,8 @@ def get_view_filename():
         "rear_view_left_img_labels.csv",
         "rear_view_right_img_labels.csv",
     ]
+    remoteFilename = [f"{trainParams.vehicleType}_{x}" for x in base]
+    return remoteFilename
 
 
 def get_label_df(filename):
@@ -543,7 +547,7 @@ def fit(
     mulitlearnStratify, X, y, allTargetParts = gen_dataset(viewFilename, notLabels)
     allColName = y.columns.tolist()
     trainParams.currentColName = allColName
-    posWeight = get_pos_weight(trial, allColName, viewFilename)
+    # posWeight = get_pos_weight(trial, allColName, viewFilename)
 
     viewCompletePredDf = pd.DataFrame()
     for kfoldId, (train_index, test_index) in enumerate(mulitlearnStratify.split(X, y)):
@@ -552,9 +556,12 @@ def fit(
         y_train["filename"] = X_train
         y_test["filename"] = X_test
         trainLoader, valLoader, testLoader = get_dataloader(y_train, y_test)
-        predDf = train_eval(trainLoader, valLoader, testLoader, posWeight, kfoldId + 1)
+        posWeight = trainLoader.dataset.allPosWeight
+        predDf, expId = train_eval(
+            trainLoader, valLoader, testLoader, posWeight, kfoldId + 1
+        )
         viewCompletePredDf = pd.concat([viewCompletePredDf, predDf])
-    store_pred(viewCompletePredDf)
+    store_pred(viewCompletePredDf, expId)
     accDf, partPredDf, allParts = ensemble_pred(viewCompletePredDf)
     partMetrics = eval_by_parts(allParts, partPredDf)
     subset_acc = accDf["subset_acc"].mean()
@@ -607,5 +614,5 @@ def tune_all_view():
 
 
 if __name__ == "__main__":
-    # train_all_views()
-    tune_all_view()
+    # tune_all_view()
+    train_all_views()

@@ -24,7 +24,6 @@ class TrainClassiferParams:
     imgAngle: str
     not_dmg_label_count: int
     dmg_label_count: int
-    expId: int
     posThreshold: float
     vehicleType: str
     tuningTimeout: int
@@ -33,7 +32,7 @@ class TrainClassiferParams:
 
 
 trainParams = TrainClassiferParams(
-    vehicleType="Saloon",
+    vehicleType="Saloon - 4 Dr",
     srcImgDir="/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/imgs",
     srcAnnFile="",
     runName="wheel",
@@ -43,8 +42,7 @@ trainParams = TrainClassiferParams(
     imgSize=300,
     trainBatchSize=100,
     trainCPUWorker=10,
-    experimentName="multilabel_v4_train_train",
-    expId=81,
+    experimentName="saloon_naive_pos_weight",
     localSaveDir="mlruns",
     saveTopNBest=1,
     check_val_every_n_epoch=5,
@@ -56,7 +54,7 @@ trainParams = TrainClassiferParams(
     not_dmg_label_count=0,
     dmg_label_count=0,
     posThreshold=0.5,
-    tuningTimeout=7200,
+    tuningTimeout=3600,
     currentPosWeight=[],
     currentColName=[],
 )
