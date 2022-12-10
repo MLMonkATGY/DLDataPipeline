@@ -27,7 +27,7 @@ from sklearn.metrics import (
 )
 from collections import Counter
 import awswrangler as wr
-
+from src.TrainClassifierParams import trainParams
 
 def get_view_names():
     return [
@@ -47,7 +47,7 @@ def get_cv_pred(expId):
     )
     os.makedirs(outputDir, exist_ok=True)
     for view in tqdm(views, desc="angle"):
-        runName = f"cv_pred_{view}"
+        runName = f"cv_pred_{trainParams.vehicleType}_{view}"
         query = f"tags.`mlflow.runName`='{runName}'"
         runs = MlflowClient().search_runs(
             experiment_ids=[expId],
@@ -90,13 +90,17 @@ def ensemble_pred(completeDf: pd.DataFrame):
     labelDf = get_raw_multilabel_df()
     labelDf = labelDf[labelDf["CaseID"].isin(caseIdList)]
     allSubsetAcc = []
-    logInterval = 1000
+    logInterval = 2000
     partDmgPred = {f"{y}{x}": [] for x in allParts for y in ["gt_", "pred_"]}
     caseSubsetAcc = []
     # pprint(partDmgPred)
+    outputPredList = [] 
     for caseId in tqdm(caseIdList):
         casePartRows = completeDf[completeDf["CaseID"] == caseId]
         correct = 0
+        outputJson = {
+            "CaseID" : caseId
+        }
         for part in allParts:
             partPreds = casePartRows[casePartRows["parts"] == part]
             if partPreds.empty:
@@ -116,6 +120,8 @@ def ensemble_pred(completeDf: pd.DataFrame):
                 predDmgStatus = rankPreds[0][0]
             partDmgPred[f"gt_{part}"].append(gtLabel)
             partDmgPred[f"pred_{part}"].append(predDmgStatus)
+            outputJson[part] = predDmgStatus
+            # outputJson[part.replace("vision_", "")] = gtLabel
 
             if predDmgStatus == gtLabel:
                 correct += 1
@@ -123,8 +129,10 @@ def ensemble_pred(completeDf: pd.DataFrame):
         subsetAcc = correct / len(allParts)
         caseSubsetAcc.append({"CaseID": caseId, "subset_acc": subsetAcc})
         allSubsetAcc.append(subsetAcc)
+        outputPredList.append(outputJson)
         if len(allSubsetAcc) % logInterval == 0:
             tqdm.write(np.format_float_positional(np.mean(allSubsetAcc), 3))
+            print( pd.json_normalize(outputPredList))
     accDf = pd.json_normalize(caseSubsetAcc)
     partPredDf = pd.DataFrame(partDmgPred)
     accDf.to_csv(
@@ -133,7 +141,8 @@ def ensemble_pred(completeDf: pd.DataFrame):
     partPredDf.to_csv(
         "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/results/part_perf.csv"
     )
-
+    outputDf = pd.json_normalize(outputPredList)
+    outputDf.to_csv( f"/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/results/{trainParams.vehicleType}_imgs_pred_output.csv")
     return accDf, partPredDf, allParts
 
 
@@ -195,7 +204,7 @@ def eval_by_parts(allParts, partPerfDf):
 
 
 if __name__ == "__main__":
-    expId = 84
+    expId = 86
     get_cv_pred(expId)
     completePredDf = combine_df()
     ensemble_pred(completePredDf)
