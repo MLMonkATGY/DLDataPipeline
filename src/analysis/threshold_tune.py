@@ -2,7 +2,7 @@ from pprint import pprint
 import mlflow
 import ujson as json
 from mlflow.tracking import MlflowClient
-from src.analysis.EnsemblePredict import get_raw_multilabel_df
+from analysis.ensemble_predictions import get_raw_multilabel_df
 from data import ImportEnv
 import pathlib
 import os

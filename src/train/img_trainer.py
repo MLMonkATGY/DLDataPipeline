@@ -21,7 +21,7 @@ from tqdm import tqdm
 import numpy as np
 import copy
 from pytorch_lightning.loggers import MLFlowLogger
-from src.analysis.EnsemblePredict import ensemble_pred, eval_by_parts
+from analysis.ensemble_predictions import ensemble_pred, eval_by_parts
 from dataset import MultilabelDataset
 from src.TrainClassifierParams import trainParams
 from pytorch_lightning.callbacks import ModelCheckpoint
