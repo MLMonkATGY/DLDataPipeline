@@ -21,7 +21,7 @@ from tqdm import tqdm
 import numpy as np
 import copy
 from pytorch_lightning.loggers import MLFlowLogger
-from analysis.ensemble_predictions import ensemble_pred, eval_by_parts
+from src.analysis.ensemble_predictions import ensemble_pred, eval_by_parts
 from dataset import MultilabelDataset
 from src.TrainClassifierParams import trainParams
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -548,6 +548,8 @@ def fit(
     allColName = y.columns.tolist()
     trainParams.currentColName = allColName
     # posWeight = get_pos_weight(trial, allColName, viewFilename)
+    print(X.dtypes)
+    print(y.dtypes)
 
     viewCompletePredDf = pd.DataFrame()
     for kfoldId, (train_index, test_index) in enumerate(mulitlearnStratify.split(X, y)):
