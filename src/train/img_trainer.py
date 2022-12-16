@@ -2,7 +2,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pickle import TRUE
 from pprint import pprint
-from typing import Any, List
+from typing import Any, List, Union
 from matplotlib import pyplot
 import pytorch_lightning as pl
 import torch.nn.functional as F
@@ -21,7 +21,11 @@ from tqdm import tqdm
 import numpy as np
 import copy
 from pytorch_lightning.loggers import MLFlowLogger
-from src.analysis.ensemble_predictions import ensemble_pred, eval_by_parts
+from src.analysis.ensemble_predictions import (
+    ensemble_pred,
+    eval_by_parts,
+    get_raw_multilabel_df,
+)
 from dataset import MultilabelDataset
 from src.TrainClassifierParams import trainParams
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -37,6 +41,7 @@ import dataclasses
 import shutil
 from torchmetrics.classification.accuracy import MultilabelAccuracy
 from torchmetrics import Precision, Recall
+from torchmetrics.classification import MultilabelPrecisionRecallCurve
 
 from torchmetrics.classification.confusion_matrix import (
     ConfusionMatrix,
@@ -240,6 +245,9 @@ class ProcessModel(pl.LightningModule):
         self.sigmoid = torch.nn.Sigmoid()
         self.current_pos_weight = pos_weight
         self.posThreshold = trainParams.posThreshold
+        self.pr_curve = MultilabelPrecisionRecallCurve(
+            num_labels=len(trainParams.targetPart), thresholds=11
+        )
         # self.save_hyperparameters()
 
     def configure_optimizers(self):
@@ -358,6 +366,8 @@ class ProcessModel(pl.LightningModule):
         labels = batch["target"].cpu().numpy()
         logit = self(imgs)
         preds = (logit > self.posThreshold).cpu().numpy()
+        self.pr_curve.update(logit, batch["target"].type(torch.uint8))
+
         # predProbNp = predProb.cpu().numpy().tolist()[0]
         allDf = []
         for p, f, conf, gt in zip(preds, files, logit, labels):
@@ -416,6 +426,24 @@ def train_eval(
         trainProcessModel, train_dataloaders=trainLoader, val_dataloaders=valLoader
     )
     batchPredDf = trainer1.predict(trainProcessModel, testLoader)
+    precision, recall, threshold = trainProcessModel.pr_curve.compute()
+    precision = precision[:, :-1]
+    recall = recall[:, :-1]
+    parts = trainParams.targetPart
+    allPrByPart = pd.DataFrame([])
+    for p, r, part in zip(precision, recall, parts):
+        prDf = pd.DataFrame(
+            {"precision": p, "recall": r, "threshold": threshold, "part": part}
+        )
+        allPrByPart = pd.concat([allPrByPart, prDf])
+        print(allPrByPart)
+    allPrByPart["f1"] = allPrByPart.apply(
+        lambda x: 2
+        * np.divide(x["precision"] * x["recall"], x["precision"] + x["recall"]),
+        axis=1,
+    )
+    allPrByPart["view"] = trainParams.imgAngle
+
     completePredDf = pd.concat(batchPredDf)
 
     displayLogger.success("Started Uploading Best Checkpoints..")
@@ -425,7 +453,8 @@ def train_eval(
         dataclasses.asdict(trainParams),
         "hyperparams.json",
     )
-
+    outputThresholdCsv = os.path.join(checkpoint_callback.dirpath, "threshold.csv")
+    allPrByPart.to_csv(outputThresholdCsv)
     mlflowLogger.log_artifacts(
         trainProcessModel.logger.run_id,
         checkpoint_callback.dirpath.replace("/checkpoints", "/"),
@@ -458,6 +487,10 @@ def getAllPart():
     with open(allPartPath, "r") as f:
         allParts = json.load(f)
     return allParts
+
+
+def compute_pr(completePred: pd.DataFrame):
+    MultilabelPrecisionRecallCurve
 
 
 def store_pred(completePred: pd.DataFrame, expId: int):
@@ -554,6 +587,8 @@ def fit(
     print(y.dtypes)
 
     viewCompletePredDf = pd.DataFrame()
+    labelDf = get_raw_multilabel_df()
+
     for kfoldId, (train_index, test_index) in enumerate(mulitlearnStratify.split(X, y)):
         X_train, X_test = X[train_index], X[test_index]
         y_train, y_test = y.loc[train_index], y.loc[test_index]
@@ -566,7 +601,7 @@ def fit(
         )
         viewCompletePredDf = pd.concat([viewCompletePredDf, predDf])
     store_pred(viewCompletePredDf, expId)
-    accDf, partPredDf, allParts = ensemble_pred(viewCompletePredDf)
+    accDf, partPredDf, allParts = ensemble_pred(viewCompletePredDf, labelDf)
     partMetrics = eval_by_parts(allParts, partPredDf)
     subset_acc = accDf["subset_acc"].mean()
     partMetrics["subset_acc"] = subset_acc

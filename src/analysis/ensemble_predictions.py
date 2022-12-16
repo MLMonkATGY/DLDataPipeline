@@ -75,19 +75,18 @@ def combine_df():
 
 
 def get_raw_multilabel_df():
-    wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
+    wr.config.s3_endpoint_url = "http://localhost:8333"
     srcBucketName = "multilabel_df"
     labelDf = wr.s3.read_parquet(path=f"s3://{srcBucketName}/", dataset=True)
     return labelDf
 
 
-def ensemble_pred(completeDf: pd.DataFrame):
+def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame):
     allParts = completeDf["parts"].unique().tolist()
     completeDf["CaseID"] = completeDf["file"].apply(
         lambda x: int(x.split("/")[-1].split("_")[0])
     )
     caseIdList = completeDf["CaseID"].unique().tolist()
-    labelDf = get_raw_multilabel_df()
     labelDf = labelDf[labelDf["CaseID"].isin(caseIdList)]
     allSubsetAcc = []
     logInterval = 2000
