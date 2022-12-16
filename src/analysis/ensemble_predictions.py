@@ -75,7 +75,7 @@ def combine_df():
 
 
 def get_raw_multilabel_df():
-    wr.config.s3_endpoint_url = "http://192.168.1.7:8333"
+    wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
     srcBucketName = "multilabel_df"
     labelDf = wr.s3.read_parquet(path=f"s3://{srcBucketName}/", dataset=True)
     return labelDf
@@ -136,13 +136,13 @@ def ensemble_pred(completeDf: pd.DataFrame):
     accDf = pd.json_normalize(caseSubsetAcc)
     partPredDf = pd.DataFrame(partDmgPred)
     accDf.to_csv(
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/results/acc_perf.csv"
+        "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/acc_perf.csv"
     )
     partPredDf.to_csv(
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/results/part_perf.csv"
+        "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/part_perf.csv"
     )
     outputDf = pd.json_normalize(outputPredList)
-    outputDf.to_csv( f"/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/results/{trainParams.vehicleType}_imgs_pred_output.csv")
+    outputDf.to_csv( f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/{trainParams.vehicleType}_imgs_pred_output.csv")
     return accDf, partPredDf, allParts
 
 
@@ -185,7 +185,7 @@ def eval_by_parts(allParts, partPerfDf):
 
     partEvalMetrics = pd.json_normalize(partMetrics)
     partEvalMetrics.to_csv(
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/results/part_metrics.csv"
+        "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/part_metrics.csv"
     )
     avgTp = partEvalMetrics["tp"].mean()
     avgTn = partEvalMetrics["tn"].mean()
@@ -204,7 +204,7 @@ def eval_by_parts(allParts, partPerfDf):
 
 
 if __name__ == "__main__":
-    expId = 87
+    expId = 89
     get_cv_pred(expId)
     completePredDf = combine_df()
     ensemble_pred(completePredDf)

@@ -13,3 +13,7 @@ visualization/
 *.png
 **/catboost_info/
 *.db
+*.js
+*.html
+*.css
+*.woff

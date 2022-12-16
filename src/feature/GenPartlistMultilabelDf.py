@@ -35,7 +35,7 @@ def worker(caseIdList, labelDf, rawMapping):
 
 
 if __name__ == "__main__":
-    wr.config.s3_endpoint_url = "http://192.168.1.7:8333"
+    wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
 
     labelDf = wr.s3.read_parquet(
         path=f"s3://partlist_label/",
@@ -69,7 +69,7 @@ if __name__ == "__main__":
     cli = boto3.client(
         "s3",
         **{
-            "endpoint_url": "http://192.168.1.7:8333",
+            "endpoint_url": "http://192.168.1.4:8333",
             "aws_access_key_id": "",
             "aws_secret_access_key": "",
             # "Username": "aaa",

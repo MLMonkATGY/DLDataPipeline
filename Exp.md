@@ -20,7 +20,7 @@ src/feature/GenPartlistMultilabelDf.py
 
 ## 5. Train Catboost Multilabel System
 
-src/train/PartlistPredition.ipynb
+src/train/part_per_model_sim.ipynb
 
 ## 6. Transfer data to local and updates local file metadata data/imgs_metadata/Saloon - 4 Dr.parquet
 

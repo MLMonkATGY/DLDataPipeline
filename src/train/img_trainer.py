@@ -66,7 +66,7 @@ from iterstrat.ml_stratifiers import (
 import awswrangler as wr
 import optuna
 
-wr.config.s3_endpoint_url = "http://192.168.1.7:8333"
+wr.config.s3_endpoint_url = "http://localhost:8333"
 
 np.random.seed(trainParams.randomSeed)
 torch.manual_seed(trainParams.randomSeed)
@@ -227,14 +227,15 @@ class ProcessModel(pl.LightningModule):
         ).to(self.device)
 
         self.testPrecision = Precision(
-            num_classes=len(trainParams.targetPart), multiclass=False
+            task="multilabel",
+            num_labels=len(trainParams.targetPart),
         ).to(self.device)
         self.testRecall = Recall(
-            num_classes=len(trainParams.targetPart), multiclass=False
+            task="multilabel", num_labels=len(trainParams.targetPart)
         ).to(self.device)
 
         self.criterion = torch.nn.BCEWithLogitsLoss(
-            pos_weight=torch.tensor(pos_weight) * 10
+            # pos_weight=torch.tensor(pos_weight) * 10
         )
         self.sigmoid = torch.nn.Sigmoid()
         self.current_pos_weight = pos_weight
@@ -498,6 +499,7 @@ def get_view_filename():
 
 def get_label_df(filename):
     labelDf = wr.s3.read_csv(path=f"s3://imgs_labels/{filename}")
+
     return labelDf
 
 
