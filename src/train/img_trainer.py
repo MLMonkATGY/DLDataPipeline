@@ -71,10 +71,66 @@ from iterstrat.ml_stratifiers import (
 import awswrangler as wr
 import optuna
 
-wr.config.s3_endpoint_url = "http://localhost:8333"
+wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
 
 np.random.seed(trainParams.randomSeed)
 torch.manual_seed(trainParams.randomSeed)
+warnings.filterwarnings("ignore")
+
+
+class AsymmetricLoss(torch.nn.Module):
+    def __init__(
+        self,
+        gamma_neg=4,
+        gamma_pos=1,
+        clip=0.05,
+        eps=1e-8,
+        disable_torch_grad_focal_loss=True,
+    ):
+        super(AsymmetricLoss, self).__init__()
+
+        self.gamma_neg = gamma_neg
+        self.gamma_pos = gamma_pos
+        self.clip = clip
+        self.disable_torch_grad_focal_loss = disable_torch_grad_focal_loss
+        self.eps = eps
+
+    def forward(self, x, y):
+        """ "
+        Parameters
+        ----------
+        x: input logits
+        y: targets (multi-label binarized vector)
+        """
+
+        # Calculating Probabilities
+        x_sigmoid = torch.sigmoid(x)
+        xs_pos = x_sigmoid
+        xs_neg = 1 - x_sigmoid
+
+        # Asymmetric Clipping
+        if self.clip is not None and self.clip > 0:
+            xs_neg = (xs_neg + self.clip).clamp(max=1)
+
+        # Basic CE calculation
+        los_pos = y * torch.log(xs_pos.clamp(min=self.eps))
+        los_neg = (1 - y) * torch.log(xs_neg.clamp(min=self.eps))
+        loss = los_pos + los_neg
+
+        # Asymmetric Focusing
+        if self.gamma_neg > 0 or self.gamma_pos > 0:
+            if self.disable_torch_grad_focal_loss:
+                torch.set_grad_enabled(False)
+            pt0 = xs_pos * y
+            pt1 = xs_neg * (1 - y)  # pt = p if t > 0 else 1-p
+            pt = pt0 + pt1
+            one_sided_gamma = self.gamma_pos * y + self.gamma_neg * (1 - y)
+            one_sided_w = torch.pow(1 - pt, one_sided_gamma)
+            if self.disable_torch_grad_focal_loss:
+                torch.set_grad_enabled(True)
+            loss *= one_sided_w
+
+        return -loss.sum()
 
 
 class FocalLoss2d(torch.nn.modules.loss._WeightedLoss):
@@ -158,12 +214,11 @@ def get_dataloader(y_train, y_test):
                 min_width=trainParams.imgSize,
                 border_mode=0,
             ),
-            # A.ColorJitter(p=0.2),
-            # A.CoarseDropout(max_height=8, max_width=8, p=0.2),
-            # A.GaussianBlur(blur_limit=(1, 5), p=0.2),
-            # A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
-            # A.GridDistortion(border_mode=0, p=0.2),
-            # A.RandomGridShuffle(p=0.2),
+            A.ColorJitter(p=0.2),
+            A.CoarseDropout(max_height=16, max_width=16, p=0.2),
+            A.GaussianBlur(blur_limit=(1, 5), p=0.2),
+            A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
+            A.GridDistortion(border_mode=0, p=0.2),
             A.Normalize(),
             ToTensorV2(),
         ]
@@ -238,9 +293,8 @@ class ProcessModel(pl.LightningModule):
         self.testRecall = Recall(
             task="multilabel", num_labels=len(trainParams.targetPart)
         ).to(self.device)
-
-        self.criterion = torch.nn.BCEWithLogitsLoss(
-            # pos_weight=torch.tensor(pos_weight) * 10
+        self.criterion = FocalLoss2d(
+            # weight=torch.tensor(np.clip(pos_weight, a_min=0.3, a_max=3))
         )
         self.sigmoid = torch.nn.Sigmoid()
         self.current_pos_weight = pos_weight
@@ -248,7 +302,7 @@ class ProcessModel(pl.LightningModule):
         self.pr_curve = MultilabelPrecisionRecallCurve(
             num_labels=len(trainParams.targetPart), thresholds=11
         )
-        # self.save_hyperparameters()
+        self.save_hyperparameters()
 
     def configure_optimizers(self):
 
@@ -275,7 +329,7 @@ class ProcessModel(pl.LightningModule):
 
     def training_epoch_end(self, outputs) -> None:
         testAcc = self.trainAccMetric.compute()
-        self.log("t_acc", testAcc, prog_bar=False)
+        self.log("t_acc", testAcc, prog_bar=True)
         self.trainAccMetric.reset()
         confMat = self.trainConfMat.compute()
         # tn = confMat[0][0]

@@ -116,11 +116,18 @@ def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame):
                 # print(partPreds[["pred_threshold", "threshold","conf", "pred"]])
                 allPred = partPreds["pred_threshold"].tolist()
                
-
+            
             rankPreds = Counter(allPred).most_common(2)
             predDmgStatus = 0
             if len(rankPreds) > 1 and rankPreds[0][1] == rankPreds[1][1]:
                 # Even num pred
+                # avgConfDf = partPreds.groupby("pred_threshold")["conf"].mean().reset_index()
+                # avgConf2Df = partPreds.groupby("pred_threshold")["threshold"].mean().reset_index()
+                # avgConfDf = avgConfDf.merge(avgConf2Df, on="pred_threshold")
+                # avgConfDf["pred_diff"] = np.abs(avgConfDf["conf"] - avgConfDf["threshold"])
+                # maxConfId = avgConfDf["pred_diff"].idxmax()
+
+                # predDmgStatus = int(avgConfDf.iloc[maxConfId]["pred_threshold"])
                 predDmgStatus = 1
             else:
                 predDmgStatus = rankPreds[0][0]
@@ -210,9 +217,9 @@ def eval_by_parts(allParts, partPerfDf):
 
 
 if __name__ == "__main__":
-    expId = 93
-    vehicleType = "Saloon - 4 Dr"
-    get_cv_pred(expId, vehicleType)
+    # expId = 104
+    # vehicleType = "Saloon - 4 Dr"
+    # get_cv_pred(expId, vehicleType)
     completePredDf = combine_df()
     labelDf = get_raw_multilabel_df()
 

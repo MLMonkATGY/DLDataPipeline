@@ -36,17 +36,55 @@ src/train/ImgTrainer.py
 
 ## 9. Ensemble predictions and evaluate part metrics
 
-src/analysis/emsemble .py
+src/analysis/emsemble.py
 
 ## 10. Performance Analysis
 
 src/analysis/Analyse.ipynb
 
 # Experiments
+
 ## Hill climb performance
+
 Get all part precision recall to optimal tradeoff
 Prevent extreme low precision or extreme low recall
+
 ### Loss function
+
 1. BCE
 2. Focal loss
 3. ASL
+   Selected : Focal loss
+
+### Image resolutions
+
+1. 300
+2. 480
+3. 640
+   Selected 480
+
+### Pos weight
+
+1. Without pos weight
+2. With pos Weight
+   Selected : Without
+
+### Data Augmentations
+
+1. Light
+2. Light + Grid shuffle
+   Selected : Light
+
+### Training Epoch
+
+1. 5
+2. 10
+   Selected : 5
+
+### Ensemble default when even predictions
+
+1. Default dmg
+2. Default not dmg
+3. By avg conf
+
+### Model Size
