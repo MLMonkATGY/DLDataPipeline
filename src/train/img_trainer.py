@@ -497,7 +497,6 @@ def store_pred(completePred: pd.DataFrame, expId: int):
     os.makedirs(outputDir, exist_ok=True)
     with mlflow.start_run(experiment_id=expId, run_name=run_name):
         outputName = f"{outputDir}/cv_pred_{trainParams.imgAngle}.csv"
-        print(completePred)
         completePred.to_csv(outputName)
         mlflow.log_artifact(outputName)
         print(f"Completed part {trainParams.imgAngle}")

@@ -30,6 +30,7 @@ import awswrangler as wr
 from src.TrainClassifierParams import trainParams
 import warnings 
 warnings.filterwarnings("once")
+pd.options.mode.chained_assignment = None 
 def get_view_names():
     return [
         "front_view_left",
@@ -92,7 +93,7 @@ def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame):
     caseIdList = completeDf["CaseID"].unique().tolist()
     labelDf = labelDf[labelDf["CaseID"].isin(caseIdList)]
     allSubsetAcc = []
-    logInterval = 2000
+    logInterval = 5000
     partDmgPred = {f"{y}{x}": [] for x in allParts for y in ["gt_", "pred_"]}
     caseSubsetAcc = []
     # pprint(partDmgPred)
@@ -108,16 +109,13 @@ def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame):
 
             if partPreds.empty:
                 gtLabel = labelDf[labelDf["CaseID"] == caseId][part].item()
-                # No detection at all
                 allPred = [0]
             else:
                 gtLabel = partPreds["gt"].iloc[0]
                 partPreds["pred_threshold"] = partPreds.apply(lambda x : int(x["conf"] > x["threshold"]) ,axis=1)
-                # allPredPos = partPreds["conf"].values > partPreds["threshold"].values
-                # allPredNeg = partPreds["conf"].values <= partPreds["threshold"].values
+                # print(partPreds[["pred_threshold", "threshold","conf", "pred"]])
                 allPred = partPreds["pred_threshold"].tolist()
-                # allPred = [int(x) for x in partPreds["pred"].tolist()]
-                # print(allPred)
+               
 
             rankPreds = Counter(allPred).most_common(2)
             predDmgStatus = 0
@@ -216,7 +214,6 @@ if __name__ == "__main__":
     vehicleType = "Saloon - 4 Dr"
     get_cv_pred(expId, vehicleType)
     completePredDf = combine_df()
-    print(completePredDf)
     labelDf = get_raw_multilabel_df()
 
     ensemble_pred(completePredDf, labelDf)
