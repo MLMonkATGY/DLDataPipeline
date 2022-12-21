@@ -28,7 +28,8 @@ from sklearn.metrics import (
 from collections import Counter
 import awswrangler as wr
 from src.TrainClassifierParams import trainParams
-
+import warnings 
+warnings.filterwarnings("once")
 def get_view_names():
     return [
         "front_view_left",
@@ -40,14 +41,14 @@ def get_view_names():
     ]
 
 
-def get_cv_pred(expId):
+def get_cv_pred(expId, vehicleType):
     views = get_view_names()
     outputDir = pathlib.Path(
-        "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/results"
+        "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results"
     )
     os.makedirs(outputDir, exist_ok=True)
     for view in tqdm(views, desc="angle"):
-        runName = f"cv_pred_{trainParams.vehicleType}_{view}"
+        runName = f"cv_pred_{vehicleType}_{view}"
         query = f"tags.`mlflow.runName`='{runName}'"
         runs = MlflowClient().search_runs(
             experiment_ids=[expId],
@@ -61,11 +62,12 @@ def get_cv_pred(expId):
 
 
 def combine_df():
-    search = "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/results/cv_pred_**.csv"
-    allPredfile = glob.glob(search, recursive=True)
+    search = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/cv_pred_**.csv"
+    allPredfile = glob.glob(search, recursive=False)
     allDf = []
     for p in allPredfile:
         viewName = p.split("/")[-1].split(".")[0].replace("cv_pred_", "")
+        print(viewName)
         df = pd.read_csv(p)
         df["view"] = viewName
         allDf.append(df)
@@ -75,14 +77,15 @@ def combine_df():
 
 
 def get_raw_multilabel_df():
-    wr.config.s3_endpoint_url = "http://localhost:8333"
+    wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
     srcBucketName = "multilabel_df"
     labelDf = wr.s3.read_parquet(path=f"s3://{srcBucketName}/", dataset=True)
     return labelDf
 
-
+# TODO
 def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame):
     allParts = completeDf["parts"].unique().tolist()
+    print(completeDf.columns)
     completeDf["CaseID"] = completeDf["file"].apply(
         lambda x: int(x.split("/")[-1].split("_")[0])
     )
@@ -101,14 +104,20 @@ def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame):
             "CaseID" : caseId
         }
         for part in allParts:
-            partPreds = casePartRows[casePartRows["parts"] == part]
+            partPreds:pd.DataFrame = casePartRows[casePartRows["parts"] == part]
+
             if partPreds.empty:
                 gtLabel = labelDf[labelDf["CaseID"] == caseId][part].item()
                 # No detection at all
                 allPred = [0]
             else:
                 gtLabel = partPreds["gt"].iloc[0]
-                allPred = [int(x) for x in partPreds["pred"].tolist()]
+                partPreds["pred_threshold"] = partPreds.apply(lambda x : int(x["conf"] > x["threshold"]) ,axis=1)
+                # allPredPos = partPreds["conf"].values > partPreds["threshold"].values
+                # allPredNeg = partPreds["conf"].values <= partPreds["threshold"].values
+                allPred = partPreds["pred_threshold"].tolist()
+                # allPred = [int(x) for x in partPreds["pred"].tolist()]
+                # print(allPred)
 
             rankPreds = Counter(allPred).most_common(2)
             predDmgStatus = 0
@@ -203,8 +212,12 @@ def eval_by_parts(allParts, partPerfDf):
 
 
 if __name__ == "__main__":
-    expId = 89
-    get_cv_pred(expId)
+    expId = 93
+    vehicleType = "Saloon - 4 Dr"
+    get_cv_pred(expId, vehicleType)
     completePredDf = combine_df()
-    ensemble_pred(completePredDf)
+    print(completePredDf)
+    labelDf = get_raw_multilabel_df()
+
+    ensemble_pred(completePredDf, labelDf)
     

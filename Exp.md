@@ -36,7 +36,7 @@ src/train/ImgTrainer.py
 
 ## 9. Ensemble predictions and evaluate part metrics
 
-src/analysis/Predict.py
+src/analysis/emsemble .py
 
 ## 10. Performance Analysis
 

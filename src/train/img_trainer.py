@@ -380,7 +380,6 @@ class ProcessModel(pl.LightningModule):
             }
             df = pd.DataFrame(info)
             allDf.append(df)
-
         predDf = pd.concat(allDf)
         return predDf
 
@@ -417,8 +416,8 @@ def train_eval(
         log_every_n_steps=30,
         callbacks=[checkpoint_callback],
         detect_anomaly=False,
-        # limit_train_batches=10,
-        # limit_val_batches=30,
+        # limit_train_batches=5,
+        # limit_val_batches=5,
         # limit_predict_batches=30,
     )
 
@@ -430,19 +429,18 @@ def train_eval(
     precision = precision[:, :-1]
     recall = recall[:, :-1]
     parts = trainParams.targetPart
-    allPrByPart = pd.DataFrame([])
+    allPRByPart = pd.DataFrame()
     for p, r, part in zip(precision, recall, parts):
         prDf = pd.DataFrame(
             {"precision": p, "recall": r, "threshold": threshold, "part": part}
         )
-        allPrByPart = pd.concat([allPrByPart, prDf])
-        print(allPrByPart)
-    allPrByPart["f1"] = allPrByPart.apply(
+        allPRByPart = pd.concat([allPRByPart, prDf])
+    allPRByPart["f1"] = allPRByPart.apply(
         lambda x: 2
         * np.divide(x["precision"] * x["recall"], x["precision"] + x["recall"]),
         axis=1,
     )
-    allPrByPart["view"] = trainParams.imgAngle
+    allPRByPart["view"] = trainParams.imgAngle
 
     completePredDf = pd.concat(batchPredDf)
 
@@ -453,13 +451,13 @@ def train_eval(
         dataclasses.asdict(trainParams),
         "hyperparams.json",
     )
-    outputThresholdCsv = os.path.join(checkpoint_callback.dirpath, "threshold.csv")
-    allPrByPart.to_csv(outputThresholdCsv)
+    outputThresholdCsv = os.path.join(checkpoint_callback.dirpath, "PR_thresholds.csv")
+    allPRByPart.to_csv(outputThresholdCsv)
     mlflowLogger.log_artifacts(
         trainProcessModel.logger.run_id,
         checkpoint_callback.dirpath.replace("/checkpoints", "/"),
     )
-    return completePredDf, trainProcessModel.logger.experiment_id
+    return completePredDf, trainProcessModel.logger.experiment_id, allPRByPart
 
 
 def BalanceSampling(srcDf, targetPart):
@@ -499,6 +497,7 @@ def store_pred(completePred: pd.DataFrame, expId: int):
     os.makedirs(outputDir, exist_ok=True)
     with mlflow.start_run(experiment_id=expId, run_name=run_name):
         outputName = f"{outputDir}/cv_pred_{trainParams.imgAngle}.csv"
+        print(completePred)
         completePred.to_csv(outputName)
         mlflow.log_artifact(outputName)
         print(f"Completed part {trainParams.imgAngle}")
@@ -573,6 +572,12 @@ def get_pos_weight(trial, allColName, viewFilename) -> List[float]:
         return posWeight
 
 
+def select_best_threshold(df: pd.DataFrame):
+    df.sort_values(by="f1", ascending=False, inplace=True)
+    allBestThreshold = df.groupby("part").head(1)
+    return allBestThreshold
+
+
 def fit(
     viewFilename,
     trial=None,
@@ -587,6 +592,7 @@ def fit(
     print(y.dtypes)
 
     viewCompletePredDf = pd.DataFrame()
+    viewCompletePRThreshold = pd.DataFrame()
     labelDf = get_raw_multilabel_df()
 
     for kfoldId, (train_index, test_index) in enumerate(mulitlearnStratify.split(X, y)):
@@ -596,22 +602,27 @@ def fit(
         y_test["filename"] = X_test
         trainLoader, valLoader, testLoader = get_dataloader(y_train, y_test)
         posWeight = trainLoader.dataset.allPosWeight
-        predDf, expId = train_eval(
+        predDf, expId, allPRByPart = train_eval(
             trainLoader, valLoader, testLoader, posWeight, kfoldId + 1
         )
+        viewCompletePRThreshold = pd.concat([viewCompletePRThreshold, allPRByPart])
         viewCompletePredDf = pd.concat([viewCompletePredDf, predDf])
+    bestThresholdDf = select_best_threshold(viewCompletePRThreshold)
+    viewCompletePredDf = viewCompletePredDf.merge(
+        bestThresholdDf, left_on="parts", right_on="part"
+    )
     store_pred(viewCompletePredDf, expId)
-    accDf, partPredDf, allParts = ensemble_pred(viewCompletePredDf, labelDf)
-    partMetrics = eval_by_parts(allParts, partPredDf)
-    subset_acc = accDf["subset_acc"].mean()
-    partMetrics["subset_acc"] = subset_acc
-    avgTp = partMetrics["avgTp"]
-    avgTn = partMetrics["avgTn"]
-    avgAcc = partMetrics["avgAcc"]
-    minTp = partMetrics["minTp"]
-    minTn = partMetrics["minTn"]
+    # accDf, partPredDf, allParts = ensemble_pred(viewCompletePredDf, labelDf)
+    # partMetrics = eval_by_parts(allParts, partPredDf)
+    # subset_acc = accDf["subset_acc"].mean()
+    # partMetrics["subset_acc"] = subset_acc
+    # avgTp = partMetrics["avgTp"]
+    # avgTn = partMetrics["avgTn"]
+    # avgAcc = partMetrics["avgAcc"]
+    # minTp = partMetrics["minTp"]
+    # minTn = partMetrics["minTn"]
 
-    return subset_acc, avgTp, avgTn, minTp, minTn
+    # return subset_acc, avgTp, avgTn, minTp, minTn
 
 
 def train_all_views():
