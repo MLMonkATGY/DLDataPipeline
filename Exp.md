@@ -88,3 +88,30 @@ Prevent extreme low precision or extreme low recall
 3. By avg conf
 
 ### Model Size
+
+## Catboost classifier
+
+### Add ROC threshold
+
+1. With threshold
+2. Without threshold
+   Selected : Without
+
+### Iterations
+
+1. 100
+2. 1000
+
+### Add features
+
+1. Vehicle Model
+2. Vehicle still driveable
+3. NCB Stat
+4. Claim type
+5. Vehicle Type
+6. Assembly_Type
+7. Sum_Insured
+8. Repairer
+9. Repairer_Apprv_Count
+10. Collision_With
+11. Handling_Insurer

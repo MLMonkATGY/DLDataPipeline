@@ -13,15 +13,29 @@ import itertools
 
 def worker(caseIdList, labelDf, rawMapping):
     allPayload = []
+    structuredFeatures = [
+        "Circumstances_of_Accident",
+        "Model",
+        "Assembly_Type",
+        "Vehicle_Still_Driveable",
+        "NCB_Stat",
+        "Assembly_Type",
+        "Claim_Type",
+        "Vehicle_Type",
+        "Sum_Insured",
+        "Repairer",
+        "Repairer_Apprv_Count",
+        "Collision_With",
+        "Handling_Insurer",
+    ]
     labelDf = labelDf[labelDf["CaseID"].isin(caseIdList)]
     for caseId in tqdm(caseIdList, desc="case"):
         targets = labelDf[labelDf["CaseID"] == caseId]
 
         caseData = copy.deepcopy(rawMapping)
         caseData["CaseID"] = targets.iloc[0]["CaseID"]
-        caseData["Circumstances_of_Accident"] = targets.iloc[0][
-            "Circumstances_of_Accident"
-        ]
+        for col in structuredFeatures:
+            caseData[col] = targets.iloc[0][col]
         lvl2DmgParts = targets["lvl_2_desc"].tolist()
         lvl3DmgParts = targets["lvl_3_desc"].tolist()
 
@@ -43,8 +57,10 @@ if __name__ == "__main__":
     )
     caseDf = wr.s3.read_parquet(
         path=f"s3://scope_case/",
+        dataset=True
         # chunked=100
     )
+    print(caseDf.columns)
     labelDf = labelDf.merge(caseDf, on="CaseID")
     allLvl3Labels = labelDf["lvl_3_desc"].unique().tolist()
     allLvl2Labels = labelDf["lvl_2_desc"].unique().tolist()
@@ -57,11 +73,11 @@ if __name__ == "__main__":
     allCaseId = labelDf["CaseID"].unique().tolist()
     tasks = []
     batchSize = 10000
-    worker_num = 8
+    worker_num = 3
     sampleBatch = 40
     for i in range(0, len(allCaseId), batchSize):
         tasks.append(allCaseId[i : i + batchSize])
-    result = Parallel(n_jobs=3)(
+    result = Parallel(n_jobs=worker_num)(
         delayed(worker)(task, labelDf, rawMapping) for task in tqdm(tasks)
     )
     multilabelDf = pd.concat(result)

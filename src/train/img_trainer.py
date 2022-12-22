@@ -420,7 +420,8 @@ class ProcessModel(pl.LightningModule):
         labels = batch["target"].cpu().numpy()
         logit = self(imgs)
         preds = (logit > self.posThreshold).cpu().numpy()
-        self.pr_curve.update(logit, batch["target"].type(torch.uint8))
+        targets = batch["target"].type(torch.uint8)
+        self.pr_curve.update(logit, targets)
 
         # predProbNp = predProb.cpu().numpy().tolist()[0]
         allDf = []
@@ -475,9 +476,9 @@ def train_eval(
         # limit_predict_batches=30,
     )
 
-    trainer1.fit(
-        trainProcessModel, train_dataloaders=trainLoader, val_dataloaders=valLoader
-    )
+    # trainer1.fit(
+    #     trainProcessModel, train_dataloaders=trainLoader, val_dataloaders=valLoader
+    # )
     batchPredDf = trainer1.predict(trainProcessModel, testLoader)
     precision, recall, threshold = trainProcessModel.pr_curve.compute()
     precision = precision[:, :-1]
