@@ -34,6 +34,11 @@ from torchmetrics.classification import (
     BinaryPrecisionRecallCurve,
 )
 import torch
+from supervised.automl import AutoML
+import warnings
+from loguru import logger
+
+warnings.filterwarnings("ignore")
 
 
 def train_catboost():
@@ -46,7 +51,19 @@ def train_catboost():
     allVisionFeatures = [x for x in multilabelDf.columns if "vision_" in x]
     caseFeatures = [
         "Circumstances_of_Accident",
+        "Model",
+        "Vehicle_Still_Driveable",
+        # "NCB_Stat",
+        # "Assembly_Type",
+        # "Claim_Type",
+        # "Vehicle_Type",
+        # # "Sum_Insured",
+        # "Repairer",
+        # # "Repairer_Apprv_Count",
+        # "Collision_With",
+        # "Handling_Insurer",
     ]
+    # contFeatures = ["Sum_Insured", "Repairer_Apprv_Count"]
     allInputFeature = caseFeatures + allVisionFeatures
     targetCol = [
         x for x in multilabelDf.columns if x not in allInputFeature and x != "CaseID"
@@ -71,9 +88,53 @@ def train_catboost():
     trainDf = multilabelDf[
         ~multilabelDf["CaseID"].isin(realTestDataDf["CaseID"].unique().tolist())
     ]
+    trainDf = trainDf.sample(frac=0.1)
     assert set(realTestDataDf["CaseID"].tolist()).isdisjoint(trainDf["CaseID"].tolist())
-
+    targetPart = [
+        "fog_lamp_rh",
+        "door_front_lh",
+        "door_front_rh",
+        "airbag",
+        "undercarriage",
+        "wheel",
+        "door_mirror_rh",
+        "interior",
+        "fog_lamp_lh",
+        "windscreen_front",
+        "door_mirror_lh",
+        "door_rear_rh",
+        "door_rear_lh",
+        "windscreen_rear",
+    ]
+    print(len(trainDf))
+    print(targetCol)
     for part in tqdm(targetCol):
+        if part not in targetPart:
+            totalTimeLimit = 5 * 60
+            model_time_limit = 1 * 60
+            algorithms = [
+                "CatBoost",
+                "LightGBM",
+                "Neural Network",
+            ]
+            hill_climbing_steps = 1
+        else:
+            totalTimeLimit = 10 * 60
+            model_time_limit = 3 * 60
+            algorithms = [
+                # "Baseline",
+                # "Linear",
+                # "Decision Tree",
+                # "Random Forest",
+                # "Extra Trees",
+                "CatBoost",
+                # "Xgboost",
+                "LightGBM",
+                "Neural Network",
+            ]
+            hill_climbing_steps = 3
+
+        logger.success(f"Start automl for part : {part}")
         allCaseIdByPart = []
         allPredByPart = []
         allGtByPart = []
@@ -86,28 +147,43 @@ def train_catboost():
         pos_count = len(Y_test[Y_test[part] == 1]) / len(Y_test)
         neg_count = len(Y_test[Y_test[part] == 0]) / len(Y_test)
         pos_weight = neg_count / pos_count
-        train_pool = Pool(
-            X_train, Y_train, cat_features=caseFeatures + allVisionFeatures
-        )
-        test_pool = Pool(X_test, Y_test, cat_features=caseFeatures + allVisionFeatures)
+        # train_pool = Pool(
+        #     X_train, Y_train, cat_features=caseFeatures + allVisionFeatures
+        # )
+        # test_pool = Pool(X_test, Y_test, cat_features=caseFeatures + allVisionFeatures)
         prCurve = MulticlassPrecisionRecallCurve(num_classes=2, thresholds=11)
-        clf = CatBoostClassifier(
-            loss_function="Logloss",
-            eval_metric="F1",
-            iterations=100,
-            task_type="GPU",
-            # scale_pos_weight=pos_weight,
-            use_best_model=True
-            # auto_class_weights="Balanced"
-            # class_names=["not_dmg", "dmg"],
+        automl = AutoML(
+            algorithms=algorithms,
+            total_time_limit=totalTimeLimit,
+            # model_time_limit=model_time_limit,
+            start_random_models=5,
+            hill_climbing_steps=hill_climbing_steps,
+            top_models_to_improve=3,
+            golden_features=True,
+            features_selection=True,
+            stack_models=True,
+            train_ensemble=True,
+            explain_level=2,
+            eval_metric="f1",
+            validation_strategy={
+                "validation_type": "split",
+                "train_ratio": 0.75,
+                "shuffle": True,
+                "stratify": True,
+            }
+            # n_jobs=8,
         )
-        clf.fit(train_pool, eval_set=test_pool, metric_period=20, plot=False, verbose=0)
-        test_predict = clf.predict(X_test)
+        automl.fit(X_train, Y_train)
 
-        (fpr, tpr, thresholds) = get_roc_curve(clf, test_pool, plot=True)
-        boundary = select_threshold(clf, curve=(fpr, tpr, thresholds), FPR=0.2)
-        clf.set_probability_threshold(boundary)
-        test_predict = clf.predict(X_test)
+        # clf.fit(train_pool, eval_set=test_pool, metric_period=20, plot=False, verbose=0)
+        test_predict = automl.predict(X_test)
+
+        # test_predict = clf.predict(X_test)
+
+        # (fpr, tpr, thresholds) = get_roc_curve(clf, test_pool, plot=True)
+        # boundary = select_threshold(clf, curve=(fpr, tpr, thresholds), FPR=0.2)
+        # clf.set_probability_threshold(boundary)
+        # test_predict = clf.predict(X_test)
 
         acc = accuracy_score(Y_test.values.astype(np.int64), test_predict)
         confMat = confusion_matrix(Y_test.values.astype(np.int64), test_predict)
