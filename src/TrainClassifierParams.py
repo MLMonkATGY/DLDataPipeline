@@ -32,7 +32,7 @@ class TrainClassiferParams:
 
 
 trainParams = TrainClassiferParams(
-    vehicleType="Saloon - 4 Dr",
+    vehicleType="SUV - 5 Dr",
     srcImgDir="/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/imgs",
     srcAnnFile="",
     runName="wheel",
@@ -41,8 +41,8 @@ trainParams = TrainClassiferParams(
     version=1,
     imgSize=480,
     trainBatchSize=32,
-    trainCPUWorker=10,
-    experimentName="saloon_focal_480_aug_default_not",
+    trainCPUWorker=5,
+    experimentName="suv_focal_480_aug",
     localSaveDir="mlruns",
     saveTopNBest=1,
     check_val_every_n_epoch=5,

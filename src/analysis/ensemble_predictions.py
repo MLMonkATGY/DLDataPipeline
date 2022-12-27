@@ -217,9 +217,9 @@ def eval_by_parts(allParts, partPerfDf):
 
 
 if __name__ == "__main__":
-    # expId = 104
-    # vehicleType = "Saloon - 4 Dr"
-    # get_cv_pred(expId, vehicleType)
+    expId = 107
+    vehicleType = "SUV - 5 Dr"
+    get_cv_pred(expId, vehicleType)
     completePredDf = combine_df()
     labelDf = get_raw_multilabel_df()
 

@@ -17,6 +17,7 @@ src/feature/PartlistLabel.ipynb
 ## 4. Genereate multilabel df for partlist prediction systems
 
 src/feature/GenPartlistMultilabelDf.py
+src/train/E2E_real_data copy.ipynb
 
 ## 5. Train Catboost Multilabel System
 
@@ -24,7 +25,7 @@ src/train/part_per_model_sim.ipynb
 
 ## 6. Transfer data to local and updates local file metadata data/imgs_metadata/Saloon - 4 Dr.parquet
 
-src/data_engineering/GetImgsDf.ipynb
+src/data_engineering/get_imgs_df.ipynb
 
 ## 7. Generate image label df for each image view
 
@@ -32,7 +33,7 @@ src/feature/MultiviewMultilabelDf.ipynb
 
 ## 8. Train multilabel image classification with new exp name
 
-src/train/ImgTrainer.py
+src/train/img_trainer.py
 
 ## 9. Ensemble predictions and evaluate part metrics
 

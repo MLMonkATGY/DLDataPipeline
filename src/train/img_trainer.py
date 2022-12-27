@@ -476,9 +476,9 @@ def train_eval(
         # limit_predict_batches=30,
     )
 
-    # trainer1.fit(
-    #     trainProcessModel, train_dataloaders=trainLoader, val_dataloaders=valLoader
-    # )
+    trainer1.fit(
+        trainProcessModel, train_dataloaders=trainLoader, val_dataloaders=valLoader
+    )
     batchPredDf = trainer1.predict(trainProcessModel, testLoader)
     precision, recall, threshold = trainProcessModel.pr_curve.compute()
     precision = precision[:, :-1]
