@@ -18,3 +18,5 @@ visualization/
 *.css
 *.woff
 AutoML*/
+src/clean/img_align_celeba/
+src/clean/weights_model/

@@ -214,11 +214,11 @@ def get_dataloader(y_train, y_test):
                 min_width=trainParams.imgSize,
                 border_mode=0,
             ),
-            A.ColorJitter(p=0.2),
-            A.CoarseDropout(max_height=16, max_width=16, p=0.2),
-            A.GaussianBlur(blur_limit=(1, 5), p=0.2),
-            A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
-            A.GridDistortion(border_mode=0, p=0.2),
+            # A.ColorJitter(p=0.2),
+            # A.CoarseDropout(max_height=16, max_width=16, p=0.2),
+            # A.GaussianBlur(blur_limit=(1, 5), p=0.2),
+            # A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
+            # A.GridDistortion(border_mode=0, p=0.2),
             A.Normalize(),
             ToTensorV2(),
         ]
@@ -471,7 +471,7 @@ def train_eval(
         log_every_n_steps=30,
         callbacks=[checkpoint_callback],
         detect_anomaly=False,
-        # limit_train_batches=5,
+        # limit_train_batches=1,
         # limit_val_batches=5,
         # limit_predict_batches=30,
     )
@@ -595,7 +595,9 @@ def gen_dataset(viewFilename, notLabels):
     trainParams.runName = viewFilename
     trainParams.targetPart = allTargetParts
     trainParams.imgAngle = viewFilename.replace("_img_labels.csv", "")
-    mulitlearnStratify = MultilabelStratifiedKFold(n_splits=2, shuffle=True)
+    mulitlearnStratify = MultilabelStratifiedKFold(
+        n_splits=trainParams.kFoldSplit, shuffle=True
+    )
     y = labelDf[allTargetParts]
     X = labelDf["filename"]
     return mulitlearnStratify, X, y, allTargetParts
@@ -642,8 +644,8 @@ def fit(
     allColName = y.columns.tolist()
     trainParams.currentColName = allColName
     # posWeight = get_pos_weight(trial, allColName, viewFilename)
-    print(X.dtypes)
-    print(y.dtypes)
+    # print(X.dtypes)
+    # print(y.dtypes)
 
     viewCompletePredDf = pd.DataFrame()
     viewCompletePRThreshold = pd.DataFrame()
@@ -718,5 +720,7 @@ def tune_all_view():
 
 
 if __name__ == "__main__":
-    # tune_all_view()
-    train_all_views()
+    allVehicleType = ["Saloon - 4 Dr", "Hatchback - 5 Dr", "SUV - 5 Dr"]
+    for vehicleType in allVehicleType:
+        trainParams.vehicleType = vehicleType
+        train_all_views()
