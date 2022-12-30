@@ -217,7 +217,7 @@ def eval_by_parts(allParts, partPerfDf):
 
 
 if __name__ == "__main__":
-    expId = 107
+    expId = 110
     vehicleType = "SUV - 5 Dr"
     get_cv_pred(expId, vehicleType)
     completePredDf = combine_df()

@@ -20,16 +20,17 @@ class MultilabelDataset(Dataset):
         transform=None,
     ):
         self.df: pd.DataFrame = df
-        self.colName = [x for x in self.df.columns if x != "filename"]
+        self.colName = [x for x in self.df.filter(regex="vision_*").columns]
         # assert self.colName in csv_file
         self.transform = transform
         self.allPosWeight = []
         self.srcImgDir = trainParams.srcImgDir
         for col in self.colName:
             if len(self.df[self.df[col] == 0]) > 0:
-                posWeight = len(self.df[self.df[col] == 1]) / (
-                    len(self.df[self.df[col] == 0])
-                )
+                posSampleSize = len(self.df[self.df[col] == 1])
+                negSampleSize = len(self.df[self.df[col] == 0])
+                posWeight = negSampleSize / posSampleSize
+
             else:
                 posWeight = 1
             self.allPosWeight.append(posWeight)

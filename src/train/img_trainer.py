@@ -214,11 +214,11 @@ def get_dataloader(y_train, y_test):
                 min_width=trainParams.imgSize,
                 border_mode=0,
             ),
-            # A.ColorJitter(p=0.2),
-            # A.CoarseDropout(max_height=16, max_width=16, p=0.2),
-            # A.GaussianBlur(blur_limit=(1, 5), p=0.2),
-            # A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
-            # A.GridDistortion(border_mode=0, p=0.2),
+            A.ColorJitter(p=0.2),
+            A.CoarseDropout(max_height=16, max_width=16, p=0.2),
+            A.GaussianBlur(blur_limit=(1, 5), p=0.2),
+            A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
+            A.GridDistortion(border_mode=0, p=0.2),
             A.Normalize(),
             ToTensorV2(),
         ]
@@ -293,9 +293,7 @@ class ProcessModel(pl.LightningModule):
         self.testRecall = Recall(
             task="multilabel", num_labels=len(trainParams.targetPart)
         ).to(self.device)
-        self.criterion = FocalLoss2d(
-            # weight=torch.tensor(np.clip(pos_weight, a_min=0.3, a_max=3))
-        )
+        self.criterion = FocalLoss2d(weight=torch.tensor(pos_weight))
         self.sigmoid = torch.nn.Sigmoid()
         self.current_pos_weight = pos_weight
         self.posThreshold = trainParams.posThreshold
@@ -584,14 +582,15 @@ def get_view_filename():
 
 
 def get_label_df(filename):
-    labelDf = wr.s3.read_csv(path=f"s3://imgs_labels/{filename}")
+    labelDf = wr.s3.read_csv(path=f"s3://imgs_labels_corrected/{filename}")
 
     return labelDf
 
 
 def gen_dataset(viewFilename, notLabels):
     labelDf: pd.DataFrame = get_label_df(viewFilename)
-    allTargetParts = [x for x in labelDf.columns if x not in notLabels]
+    print(labelDf)
+    allTargetParts = [x for x in labelDf.filter(regex="vision_*").columns]
     trainParams.runName = viewFilename
     trainParams.targetPart = allTargetParts
     trainParams.imgAngle = viewFilename.replace("_img_labels.csv", "")
