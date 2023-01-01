@@ -84,7 +84,7 @@ def get_raw_multilabel_df():
     return labelDf
 
 # TODO
-def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame):
+def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame, vehicleType:str):
     allParts = completeDf["parts"].unique().tolist()
     print(completeDf.columns)
     completeDf["CaseID"] = completeDf["file"].apply(
@@ -155,7 +155,7 @@ def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame):
         "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/part_perf.csv"
     )
     outputDf = pd.json_normalize(outputPredList)
-    outputDf.to_csv( f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/{trainParams.vehicleType}_imgs_pred_output.csv")
+    outputDf.to_csv( f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/{vehicleType}_imgs_pred_output.csv")
     return accDf, partPredDf, allParts
 
 
@@ -218,10 +218,10 @@ def eval_by_parts(allParts, partPerfDf):
 
 if __name__ == "__main__":
     expId = 111
-    vehicleType = "Hatchback - 5 Dr"
+    vehicleType = "SUV - 5 Dr"
     get_cv_pred(expId, vehicleType)
     completePredDf = combine_df()
     labelDf = get_raw_multilabel_df()
 
-    ensemble_pred(completePredDf, labelDf)
+    ensemble_pred(completePredDf, labelDf, vehicleType)
     
