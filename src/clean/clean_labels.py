@@ -107,6 +107,17 @@ def get_label_df(filename):
     return labelDf
 
 
+def count_pos_pred(row, targetParts: List[str]):
+    targetPreds = np.array(row[targetParts].values > 0.5)
+    posCount = targetPreds.sum()
+    return posCount
+
+
+def count_pos_gt(row, targetParts: List[str]):
+    posCount = int(row[targetParts].values.sum())
+    return posCount
+
+
 def find_issues_and_correct(expId, vehicleType, view, downloadDir):
     get_cv_pred(expId, vehicleType, downloadDir, view)
     targetCsvName = f"cv_pred_{vehicleType}_{view}.csv"
@@ -133,29 +144,77 @@ def find_issues_and_correct(expId, vehicleType, view, downloadDir):
 
     targetImgLabelFilename = f"{vehicleType}_{view}_img_labels.csv"
     currentVerImgLabelDf = get_label_df(targetImgLabelFilename)
-    topHalfLabelIssue = ranked_label_issues[: len(ranked_label_issues) // 2]
-    currentAvailablePartToCorrect = sorted(allParts)
+    topHalfLabelIssue = ranked_label_issues
+    targetPartToCorrect = [
+        "vision_bonnet",
+        "vision_bumper_front",
+        "vision_windscreen_front",
+        "vision_engine",
+        "vision_grille",
+        "vision_bumper_rear",
+        "vision_rear_compartment",
+        "vision_wheel",
+        "vision_fender_front_lh",
+        "vision_fender_front_rh",
+        "vision_rear_quarter_lh",
+        "vision_rear_quarter_rh",
+    ]
+    currentAvailablePartToCorrect = sorted(
+        list(set(targetPartToCorrect) & set(allParts))
+    )
+
+    # currentAvailablePartToCorrect = sorted(allParts)
     allCaseWithLabelIssue = viewGtDf.index.values[topHalfLabelIssue]
-    allCaseWithLabelIssue
+
     correctedLabelDf = currentVerImgLabelDf.copy(deep=True)
+    viewPredDf["pred_pos_num"] = viewPredDf.apply(
+        lambda x: count_pos_pred(x, currentAvailablePartToCorrect), axis=1
+    )
+    viewGtDf["gt_pos_num"] = viewGtDf.apply(
+        lambda x: count_pos_gt(x, viewGtDf.filter(regex="vision_*").columns), axis=1
+    )
+    tempDf = viewGtDf[["gt_pos_num"]].merge(
+        viewPredDf[["pred_pos_num"]], left_index=True, right_index=True
+    )
+    # limit1 = len(tempDf[tempDf["pred_pos_num"] <= 1])
+    # limit2 = len(tempDf[tempDf["gt_pos_num"] >= 3])
+    # print(len(tempDf[tempDf["pred_pos_num"] <= 1]))
+    # print(len(tempDf[tempDf["gt_pos_num"] >= 3]))
+    # print(tempDf["pred_pos_num"].value_counts(normalize=True))
+    # print(tempDf["gt_pos_num"].value_counts(normalize=True))
+
+    susFpCaseId = tempDf[
+        (tempDf["gt_pos_num"] >= 3) & (tempDf["pred_pos_num"] <= 1)
+    ].index.values
+    # print(susFpCaseId)
+    fpCaseId = np.intersect1d(susFpCaseId, allCaseWithLabelIssue).tolist()
+    susFnCaseId = tempDf[
+        (tempDf["gt_pos_num"] <= 1) & (tempDf["pred_pos_num"] >= 3)
+    ].index.values
+    fnCaseId = np.intersect1d(susFnCaseId, allCaseWithLabelIssue).tolist()
+
     for targetPart in currentAvailablePartToCorrect:
+        oriPosSampleCount = len(correctedLabelDf[correctedLabelDf[targetPart] == 1])
+        oriNegSampleCount = len(correctedLabelDf[correctedLabelDf[targetPart] == 0])
+
         fpCaseToConvertDf = correctedLabelDf[
-            (correctedLabelDf["CaseID"].isin(allCaseWithLabelIssue))
-            & (correctedLabelDf[targetPart] == 1)
+            (correctedLabelDf["CaseID"].isin(fpCaseId))
+            # & (correctedLabelDf[targetPart] == 1)
         ][[targetPart, "CaseID"]]
-        posWithoutIssue = len(
-            correctedLabelDf[
-                (~correctedLabelDf["CaseID"].isin(fpCaseToConvertDf["CaseID"]))
-                & ((correctedLabelDf[targetPart] == 1))
-            ]
-        )
-        noIssuePosLabelRatio = posWithoutIssue / len(correctedLabelDf)
-        if noIssuePosLabelRatio < 0.05:
-            logger.warning(f"Skipping {targetPart} due low pos label after filtering")
-            continue
-        logger.success(
-            f"{targetPart} : {noIssuePosLabelRatio} pos label left with no issues"
-        )
+
+        # posWithoutIssue = len(
+        #     correctedLabelDf[
+        #         (~correctedLabelDf["CaseID"].isin(susFpCaseId))
+        #         & ((correctedLabelDf[targetPart] == 1))
+        #     ]
+        # )
+        # noIssuePosLabelRatio = posWithoutIssue / len(correctedLabelDf)
+        # if noIssuePosLabelRatio < 0.05:
+        #     logger.warning(f"Skipping {targetPart} due low pos label after filtering")
+        #     continue
+        # logger.success(
+        #     f"{targetPart} : {noIssuePosLabelRatio} pos label left with no issues"
+        # )
         """
         Convert labels to zero
         """
@@ -165,8 +224,47 @@ def find_issues_and_correct(expId, vehicleType, view, downloadDir):
             ),
             targetPart,
         ] = 0
+        fnCaseToConvertDf = correctedLabelDf[
+            (correctedLabelDf["CaseID"].isin(fnCaseId))
+            # & (correctedLabelDf[targetPart] == 0)
+        ][[targetPart, "CaseID"]]
+        correctedLabelDf.loc[
+            correctedLabelDf["CaseID"].isin(
+                fnCaseToConvertDf["CaseID"].unique().tolist()
+            ),
+            targetPart,
+        ] = 1
+        afterCorrectionPosCount = len(
+            correctedLabelDf[correctedLabelDf[targetPart] == 1]
+        )
+        afterCorrectionNegCount = len(
+            correctedLabelDf[correctedLabelDf[targetPart] == 0]
+        )
+    # t = correctedLabelDf[
+    #     (correctedLabelDf["CaseID"].isin(fpCaseId))
+    #     # & (correctedLabelDf[targetPart] == 1.0)
+    # ]
+    # print(correctedLabelDf["CaseID"].describe())
+    # print(correctedLabelDf[targetPart])
 
+    # print(t)
     logger.success(correctedLabelDf)
+    # fpCorrected = len(
+    #     correctedLabelDf[
+    #         (correctedLabelDf[targetPart] == 1)
+    #         & (correctedLabelDf["CaseID"].isin(fpCaseId))
+    #         # & (correctedLabelDf[targetPart] == 1.0)
+    #     ]
+    # )
+    # fnCorrected = len(
+    #     correctedLabelDf[
+    #         (correctedLabelDf["CaseID"].isin(fnCaseId))
+    #         & (correctedLabelDf[targetPart] == 0)
+    #     ]
+    # )
+    logger.success(f"Detected FP error {afterCorrectionPosCount - oriPosSampleCount}")
+    logger.success(f"Detected FN error {afterCorrectionNegCount - oriNegSampleCount}")
+
     logger.success(f"Done correcting {vehicleType} : {view} dataset")
     persist_corrected_dataframe(correctedLabelDf)
     logger.success(f"Done saving {vehicleType} : {view} dataset")
