@@ -293,7 +293,7 @@ class ProcessModel(pl.LightningModule):
         self.testRecall = Recall(
             task="multilabel", num_labels=len(trainParams.targetPart)
         ).to(self.device)
-        self.criterion = FocalLoss2d(weight=torch.tensor(pos_weight))
+        self.criterion = FocalLoss2d()
         self.sigmoid = torch.nn.Sigmoid()
         self.current_pos_weight = pos_weight
         self.posThreshold = trainParams.posThreshold
@@ -582,7 +582,7 @@ def get_view_filename():
 
 
 def get_label_df(filename):
-    labelDf = wr.s3.read_csv(path=f"s3://imgs_labels_corrected/{filename}")
+    labelDf = wr.s3.read_csv(path=f"s3://imgs_labels_2/{filename}")
 
     return labelDf
 
