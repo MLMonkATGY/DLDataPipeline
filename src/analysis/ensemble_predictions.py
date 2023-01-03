@@ -45,7 +45,7 @@ def get_view_names():
 def get_cv_pred(expId, vehicleType):
     views = get_view_names()
     outputDir = pathlib.Path(
-        "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results"
+        f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/{expId}/{vehicleType}"
     )
     os.makedirs(outputDir, exist_ok=True)
     for view in tqdm(views, desc="angle"):
@@ -62,8 +62,8 @@ def get_cv_pred(expId, vehicleType):
         mlflow.artifacts.download_artifacts(run_id=runId, dst_path=outputDir)
 
 
-def combine_df():
-    search = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/cv_pred_**.csv"
+def combine_df(expId, vehicleType):
+    search = f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/{expId}/{vehicleType}/cv_pred_**.csv"
     allPredfile = glob.glob(search, recursive=False)
     allDf = []
     for p in allPredfile:
@@ -84,9 +84,13 @@ def get_raw_multilabel_df():
     return labelDf
 
 # TODO
-def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame, vehicleType:str):
+def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame, vehicleType:str, expId:int):
+    os.makedirs(        
+        f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/{expId}/{vehicleType}",
+        exist_ok=True
+    )
     allParts = completeDf["parts"].unique().tolist()
-    print(completeDf.columns)
+    # print(completeDf.columns)
     completeDf["CaseID"] = completeDf["file"].apply(
         lambda x: int(x.split("/")[-1].split("_")[0])
     )
@@ -98,7 +102,7 @@ def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame, vehicleType:st
     caseSubsetAcc = []
     # pprint(partDmgPred)
     outputPredList = [] 
-    for caseId in tqdm(caseIdList):
+    for caseId in tqdm(labelDf["CaseID"].unique().tolist()):
         casePartRows = completeDf[completeDf["CaseID"] == caseId]
         correct = 0
         outputJson = {
@@ -108,8 +112,19 @@ def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame, vehicleType:st
             partPreds:pd.DataFrame = casePartRows[casePartRows["parts"] == part]
 
             if partPreds.empty:
-                gtLabel = labelDf[labelDf["CaseID"] == caseId][part].item()
-                allPred = [0]
+                try:
+                    tempRow = labelDf[labelDf["CaseID"] == caseId]
+                    if not tempRow.empty:
+                        gtLabel = tempRow[part].item()
+                    else:
+
+                        print(caseId)
+                        raise Exception("a")
+                    allPred = [0]
+                except Exception as e1:
+                    print(e1)
+                    raise Exception(e1)
+
             else:
                 gtLabel = partPreds["gt"].iloc[0]
                 partPreds["pred_threshold"] = partPreds.apply(lambda x : int(x["conf"] > x["threshold"]) ,axis=1)
@@ -128,7 +143,7 @@ def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame, vehicleType:st
                 # maxConfId = avgConfDf["pred_diff"].idxmax()
 
                 # predDmgStatus = int(avgConfDf.iloc[maxConfId]["pred_threshold"])
-                predDmgStatus = 1
+                predDmgStatus = 0
             else:
                 predDmgStatus = rankPreds[0][0]
             partDmgPred[f"gt_{part}"].append(gtLabel)
@@ -149,13 +164,13 @@ def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame, vehicleType:st
     accDf = pd.json_normalize(caseSubsetAcc)
     partPredDf = pd.DataFrame(partDmgPred)
     accDf.to_csv(
-        "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/acc_perf.csv"
+        f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/{expId}/{vehicleType}/acc_perf.csv"
     )
     partPredDf.to_csv(
-        "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/part_perf.csv"
+        f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/{expId}/{vehicleType}/part_perf.csv"
     )
     outputDf = pd.json_normalize(outputPredList)
-    outputDf.to_csv( f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/{vehicleType}_imgs_pred_output.csv")
+    outputDf.to_csv( f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/results/{expId}/{vehicleType}/{vehicleType}_imgs_pred_output.csv")
     return accDf, partPredDf, allParts
 
 
@@ -217,11 +232,12 @@ def eval_by_parts(allParts, partPerfDf):
 
 
 if __name__ == "__main__":
-    expId = 111
-    vehicleType = "SUV - 5 Dr"
-    get_cv_pred(expId, vehicleType)
-    completePredDf = combine_df()
-    labelDf = get_raw_multilabel_df()
+    expId = 116
+    allVehicleType = ["Saloon - 4 Dr", "Hatchback - 5 Dr", "SUV - 5 Dr"]
+    for vehicleType in allVehicleType:
+        get_cv_pred(expId, vehicleType)
+        completePredDf = combine_df(expId,vehicleType)
+        labelDf = get_raw_multilabel_df()
 
-    ensemble_pred(completePredDf, labelDf, vehicleType)
-    
+        ensemble_pred(completePredDf, labelDf, vehicleType, expId)
+        

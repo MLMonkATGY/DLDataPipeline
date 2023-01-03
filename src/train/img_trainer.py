@@ -570,19 +570,19 @@ def CountLabelComb(srcDf, allTargetParts):
 
 def get_view_filename():
     base = [
-        "front_view_left_img_labels.csv",
-        "front_view_img_labels.csv",
-        "front_view_right_img_labels.csv",
         "rear_view_img_labels.csv",
         "rear_view_left_img_labels.csv",
         "rear_view_right_img_labels.csv",
+        "front_view_left_img_labels.csv",
+        "front_view_img_labels.csv",
+        "front_view_right_img_labels.csv",
     ]
     remoteFilename = [f"{trainParams.vehicleType}_{x}" for x in base]
     return remoteFilename
 
 
 def get_label_df(filename):
-    labelDf = wr.s3.read_csv(path=f"s3://imgs_labels_2/{filename}")
+    labelDf = wr.s3.read_csv(path=f"s3://imgs_labels_4/{filename}")
 
     return labelDf
 
@@ -648,7 +648,6 @@ def fit(
 
     viewCompletePredDf = pd.DataFrame()
     viewCompletePRThreshold = pd.DataFrame()
-    labelDf = get_raw_multilabel_df()
 
     for kfoldId, (train_index, test_index) in enumerate(mulitlearnStratify.split(X, y)):
         X_train, X_test = X[train_index], X[test_index]

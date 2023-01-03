@@ -49,6 +49,10 @@ def worker(caseIdList, labelDf, rawMapping):
 
 
 if __name__ == "__main__":
+    noisyLabelDf = pd.read_csv(
+        "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/cleanlab/v3/noisy_label_top15.csv"
+    )
+    noisyLabelCase = noisyLabelDf["CaseID"].tolist()
     wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
 
     labelDf = wr.s3.read_parquet(
@@ -60,7 +64,6 @@ if __name__ == "__main__":
         dataset=True
         # chunked=100
     )
-    print(caseDf.columns)
     labelDf = labelDf.merge(caseDf, on="CaseID")
     allLvl3Labels = labelDf["lvl_3_desc"].unique().tolist()
     allLvl2Labels = labelDf["lvl_2_desc"].unique().tolist()
@@ -71,12 +74,15 @@ if __name__ == "__main__":
     allPayload = []
     allDf = []
     allCaseId = labelDf["CaseID"].unique().tolist()
+    validCaseId = sorted(list(set(allCaseId).difference(noisyLabelCase)))
+    assert len(validCaseId) < len(allCaseId)
+    print(len(validCaseId))
     tasks = []
     batchSize = 10000
     worker_num = 3
     sampleBatch = 40
-    for i in range(0, len(allCaseId), batchSize):
-        tasks.append(allCaseId[i : i + batchSize])
+    for i in range(0, len(validCaseId), batchSize):
+        tasks.append(validCaseId[i : i + batchSize])
     result = Parallel(n_jobs=worker_num)(
         delayed(worker)(task, labelDf, rawMapping) for task in tqdm(tasks)
     )
@@ -91,8 +97,8 @@ if __name__ == "__main__":
             # "Username": "aaa",
         },
     )
-    outputBucketName = "multilabel_df"
-    # cli.create_bucket(Bucket=outputBucketName)
+    outputBucketName = "multilabel_df_3"
+    cli.create_bucket(Bucket=outputBucketName)
     wr.s3.to_parquet(
         df=multilabelDf,
         path=f"s3://{outputBucketName}/",

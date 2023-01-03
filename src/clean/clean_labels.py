@@ -51,9 +51,9 @@ wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
 def get_view_names():
     return [
         "front_view_left",
-        "front_view",
+        # "front_view",
         "front_view_right",
-        "rear_view",
+        # "rear_view",
         "rear_view_left",
         "rear_view_right",
     ]
@@ -64,7 +64,6 @@ def get_cv_pred(expId, vehicleType, downloadDir, view):
     os.makedirs(outputDir, exist_ok=True)
     runName = f"cv_pred_{vehicleType}_{view}"
     query = f"tags.`mlflow.runName`='{runName}'"
-    b = "cv_pred_SUV - 5 Dr_front_view"
     runs = MlflowClient().search_runs(
         experiment_ids=[expId],
         filter_string=query,
@@ -118,6 +117,30 @@ def count_pos_gt(row, targetParts: List[str]):
     return posCount
 
 
+def get_top_issue(expId, vehicleType, view, downloadDir, topN):
+    targetCsvName = f"cv_pred_{vehicleType}_{view}.csv"
+    completePredDf = combine_df(downloadDir, targetCsvName)
+    allParts = completePredDf["part"].unique().tolist()
+    # allParts = [x for x in allParts if x not in ["vision_misc", "vision_non_external"]]
+    viewPredDf, filesDf = compile_pred_proba(completePredDf, allParts, "conf")
+    viewGtDf, filesDf = compile_pred_proba(completePredDf, allParts, "gt")
+    labels = onehot2int(viewGtDf.values)
+    pred_labels = onehot2int(np.array((viewPredDf.values > 0.5), np.int32))
+    ranked_label_issues = find_label_issues(
+        labels=labels,
+        pred_probs=viewPredDf.values,
+        multi_label=True,
+        return_indices_ranked_by="self_confidence",
+        n_jobs=1,
+        filter_by="confident_learning",
+    )
+    issueCoverage = len(ranked_label_issues) / len(viewGtDf)
+    logger.info(f"Issue covers : {issueCoverage} of total case")
+    topIssues = ranked_label_issues[:topN]
+    allCaseWithLabelIssue = viewGtDf.index.values[topIssues]
+    return allCaseWithLabelIssue
+
+
 def find_issues_and_correct(expId, vehicleType, view, downloadDir):
     get_cv_pred(expId, vehicleType, downloadDir, view)
     targetCsvName = f"cv_pred_{vehicleType}_{view}.csv"
@@ -146,18 +169,19 @@ def find_issues_and_correct(expId, vehicleType, view, downloadDir):
     currentVerImgLabelDf = get_label_df(targetImgLabelFilename)
     topHalfLabelIssue = ranked_label_issues
     targetPartToCorrect = [
-        "vision_bonnet",
+        # "vision_bonnet",
+        # "vision_grille",
         "vision_bumper_front",
-        "vision_windscreen_front",
         "vision_engine",
-        "vision_grille",
         "vision_bumper_rear",
-        "vision_rear_compartment",
         "vision_wheel",
-        "vision_fender_front_lh",
-        "vision_fender_front_rh",
-        "vision_rear_quarter_lh",
-        "vision_rear_quarter_rh",
+        "vision_headlamp_lh",
+        "vision_headlamp_rh",
+        # "vision_fender_front_lh",
+        # "vision_fender_front_rh",
+        # "vision_rear_quarter_lh",
+        # "vision_rear_quarter_rh",
+        "vision_rear_compartment",
     ]
     currentAvailablePartToCorrect = sorted(
         list(set(targetPartToCorrect) & set(allParts))
@@ -170,8 +194,13 @@ def find_issues_and_correct(expId, vehicleType, view, downloadDir):
     viewPredDf["pred_pos_num"] = viewPredDf.apply(
         lambda x: count_pos_pred(x, currentAvailablePartToCorrect), axis=1
     )
+    exclude = ["vision_misc", "vision_non_external"]
+    targetsGtParts = list(
+        set(viewGtDf.filter(regex="vision_*").columns).difference(set(exclude))
+    )
+
     viewGtDf["gt_pos_num"] = viewGtDf.apply(
-        lambda x: count_pos_gt(x, viewGtDf.filter(regex="vision_*").columns), axis=1
+        lambda x: count_pos_gt(x, targetsGtParts), axis=1
     )
     tempDf = viewGtDf[["gt_pos_num"]].merge(
         viewPredDf[["pred_pos_num"]], left_index=True, right_index=True
@@ -224,16 +253,16 @@ def find_issues_and_correct(expId, vehicleType, view, downloadDir):
             ),
             targetPart,
         ] = 0
-        fnCaseToConvertDf = correctedLabelDf[
-            (correctedLabelDf["CaseID"].isin(fnCaseId))
-            # & (correctedLabelDf[targetPart] == 0)
-        ][[targetPart, "CaseID"]]
-        correctedLabelDf.loc[
-            correctedLabelDf["CaseID"].isin(
-                fnCaseToConvertDf["CaseID"].unique().tolist()
-            ),
-            targetPart,
-        ] = 1
+        # fnCaseToConvertDf = correctedLabelDf[
+        #     (correctedLabelDf["CaseID"].isin(fnCaseId))
+        #     # & (correctedLabelDf[targetPart] == 0)
+        # ][[targetPart, "CaseID"]]
+        # correctedLabelDf.loc[
+        #     correctedLabelDf["CaseID"].isin(
+        #         fnCaseToConvertDf["CaseID"].unique().tolist()
+        #     ),
+        #     targetPart,
+        # ] = 1
         afterCorrectionPosCount = len(
             correctedLabelDf[correctedLabelDf[targetPart] == 1]
         )
@@ -248,7 +277,7 @@ def find_issues_and_correct(expId, vehicleType, view, downloadDir):
     # print(correctedLabelDf[targetPart])
 
     # print(t)
-    logger.success(correctedLabelDf)
+    # logger.success(correctedLabelDf)
     # fpCorrected = len(
     #     correctedLabelDf[
     #         (correctedLabelDf[targetPart] == 1)
@@ -263,7 +292,7 @@ def find_issues_and_correct(expId, vehicleType, view, downloadDir):
     #     ]
     # )
     logger.success(f"Detected FP error {afterCorrectionPosCount - oriPosSampleCount}")
-    logger.success(f"Detected FN error {afterCorrectionNegCount - oriNegSampleCount}")
+    logger.success(f"Detected FN error {oriNegSampleCount - afterCorrectionNegCount}")
 
     logger.success(f"Done correcting {vehicleType} : {view} dataset")
     persist_corrected_dataframe(correctedLabelDf)
@@ -274,15 +303,27 @@ def persist_corrected_dataframe(df):
     imgLabelFilename = f"{vehicleType}_{view}_img_labels.csv"
     wr.s3.to_csv(
         df=df,
-        path=f"s3://imgs_labels_corrected/{imgLabelFilename}",
+        path=f"s3://imgs_labels_corrected_2/{imgLabelFilename}",
     )
 
 
 if __name__ == "__main__":
-    downloadDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/cleanlab"
-    expId = 109
+    downloadDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/cleanlab/v2"
+    expId = 113
 
     allVehicleType = ["Saloon - 4 Dr", "Hatchback - 5 Dr", "SUV - 5 Dr"]
+    allCaseWithIssue = []
     for vehicleType in tqdm(allVehicleType):
         for view in tqdm(get_view_names()):
-            find_issues_and_correct(expId, vehicleType, view, downloadDir)
+            topIssueCaseId = get_top_issue(
+                expId, vehicleType, view, downloadDir, topN=1500
+            )
+            allCaseWithIssue.extend(topIssueCaseId)
+    caseStudyDf = pd.read_csv(
+        "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/case_study/case_study_5/case_study_result.csv"
+    )
+    caseStudyCaseId = set(caseStudyDf["CaseID"].unique().tolist())
+    uniqueIssueCaseToRemove = set(allCaseWithIssue).difference(caseStudyCaseId)
+    logger.success(f"Removing {len(uniqueIssueCaseToRemove) / 30e3} of cases")
+    noisyLabelDf = pd.DataFrame({"CaseID": sorted(list(uniqueIssueCaseToRemove))})
+    noisyLabelDf.to_csv("./noisy_label_top15.csv")
