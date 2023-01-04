@@ -205,7 +205,7 @@ def create_model():
     return model
 
 
-def get_dataloader(y_train, y_test):
+def get_dataloader(y_train, y_eval):
     trainTransform = A.Compose(
         [
             A.LongestMaxSize(trainParams.imgSize),
@@ -245,14 +245,14 @@ def get_dataloader(y_train, y_test):
         pin_memory=True,
         persistent_workers=True,
     )
-    evalDs = MultilabelDataset(y_test, evalTransform)
+    evalDs = MultilabelDataset(y_eval, evalTransform)
     evalLoader = DataLoader2(
         evalDs,
         shuffle=False,
         batch_size=trainParams.trainBatchSize,
         num_workers=trainParams.trainCPUWorker,
     )
-    testDs = MultilabelDataset(y_test, evalTransform)
+    testDs = MultilabelDataset(y_eval, evalTransform)
     testLoader = DataLoader2(
         testDs,
         shuffle=False,
@@ -265,6 +265,9 @@ def get_dataloader(y_train, y_test):
     assert set(testDs.df["filename"].unique().tolist()).isdisjoint(
         set(trainDs.df["filename"].unique().tolist())
     )
+    # assert set(testDs.df["filename"].unique().tolist()).isdisjoint(
+    #     set(evalDs.df["filename"].unique().tolist())
+    # )
     return trainLoader, evalLoader, testLoader
 
 
@@ -477,7 +480,7 @@ def train_eval(
     trainer1.fit(
         trainProcessModel, train_dataloaders=trainLoader, val_dataloaders=valLoader
     )
-    batchPredDf = trainer1.predict(trainProcessModel, testLoader)
+    trainer1.predict(trainProcessModel, valLoader)
     precision, recall, threshold = trainProcessModel.pr_curve.compute()
     precision = precision[:, :-1]
     recall = recall[:, :-1]
@@ -494,8 +497,9 @@ def train_eval(
         axis=1,
     )
     allPRByPart["view"] = trainParams.imgAngle
-
-    completePredDf = pd.concat(batchPredDf)
+    trainProcessModel.pr_curve.reset()
+    testDf = trainer1.predict(trainProcessModel, testLoader)
+    completePredDf = pd.concat(testDf)
 
     displayLogger.success("Started Uploading Best Checkpoints..")
     mlflowLogger: MlflowClient = trainProcessModel.logger.experiment
@@ -540,10 +544,6 @@ def getAllPart():
     return allParts
 
 
-def compute_pr(completePred: pd.DataFrame):
-    MultilabelPrecisionRecallCurve
-
-
 def store_pred(completePred: pd.DataFrame, expId: int):
     run_name = f"cv_pred_{trainParams.imgAngle}"
     outputDir = pathlib.Path(os.getcwd()) / "outputs"
@@ -582,24 +582,29 @@ def get_view_filename():
 
 
 def get_label_df(filename):
-    labelDf = wr.s3.read_csv(path=f"s3://imgs_labels_4/{filename}")
+    labelDf = wr.s3.read_csv(path=f"s3://imgs_labels/{filename}")
 
     return labelDf
 
 
-def gen_dataset(viewFilename, notLabels):
+def gen_dataset(viewFilename):
     labelDf: pd.DataFrame = get_label_df(viewFilename)
-    print(labelDf)
+    testCaseId = pd.read_csv(
+        "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/test_set/test_case_id.csv"
+    )["CaseID"].tolist()
+    # testLabelDf = labelDf[labelDf["CaseID"].isin(testCaseId)]
+    # labelDf = labelDf[~labelDf["CaseID"].isin(testCaseId)].reset_index()
+    # logger.success(f"Test size : {len(testLabelDf)}")
     allTargetParts = [x for x in labelDf.filter(regex="vision_*").columns]
     trainParams.runName = viewFilename
     trainParams.targetPart = allTargetParts
     trainParams.imgAngle = viewFilename.replace("_img_labels.csv", "")
-    mulitlearnStratify = MultilabelStratifiedKFold(
-        n_splits=trainParams.kFoldSplit, shuffle=True
-    )
+
     y = labelDf[allTargetParts]
     X = labelDf["filename"]
-    return mulitlearnStratify, X, y, allTargetParts
+    # test_y = testLabelDf[allTargetParts]
+    # test_X = testLabelDf["filename"]
+    return X, y
 
 
 def get_pos_weight(trial, allColName, viewFilename) -> List[float]:
@@ -633,13 +638,12 @@ def select_best_threshold(df: pd.DataFrame):
     return allBestThreshold
 
 
-def fit(
-    viewFilename,
-    trial=None,
-):
-    notLabels = ["CaseID", "view", "filename", "Unnamed: 0"]
+def fit(viewFilename):
 
-    mulitlearnStratify, X, y, allTargetParts = gen_dataset(viewFilename, notLabels)
+    X, y = gen_dataset(viewFilename)
+    mulitlearnStratify = MultilabelStratifiedKFold(
+        n_splits=trainParams.kFoldSplit, shuffle=True
+    )
     allColName = y.columns.tolist()
     trainParams.currentColName = allColName
     # posWeight = get_pos_weight(trial, allColName, viewFilename)
@@ -650,11 +654,13 @@ def fit(
     viewCompletePRThreshold = pd.DataFrame()
 
     for kfoldId, (train_index, test_index) in enumerate(mulitlearnStratify.split(X, y)):
-        X_train, X_test = X[train_index], X[test_index]
-        y_train, y_test = y.loc[train_index], y.loc[test_index]
+        X_train, X_eval = X[train_index], X[test_index]
+        y_train, y_eval = y.loc[train_index], y.loc[test_index]
         y_train["filename"] = X_train
-        y_test["filename"] = X_test
-        trainLoader, valLoader, testLoader = get_dataloader(y_train, y_test)
+        y_eval["filename"] = X_eval
+        # y_test["filename"] = x_test
+
+        trainLoader, valLoader, testLoader = get_dataloader(y_train, y_eval)
         posWeight = trainLoader.dataset.allPosWeight
         predDf, expId, allPRByPart = train_eval(
             trainLoader, valLoader, testLoader, posWeight, kfoldId + 1
@@ -666,21 +672,11 @@ def fit(
         bestThresholdDf, left_on="parts", right_on="part"
     )
     store_pred(viewCompletePredDf, expId)
-    # accDf, partPredDf, allParts = ensemble_pred(viewCompletePredDf, labelDf)
-    # partMetrics = eval_by_parts(allParts, partPredDf)
-    # subset_acc = accDf["subset_acc"].mean()
-    # partMetrics["subset_acc"] = subset_acc
-    # avgTp = partMetrics["avgTp"]
-    # avgTn = partMetrics["avgTn"]
-    # avgAcc = partMetrics["avgAcc"]
-    # minTp = partMetrics["minTp"]
-    # minTn = partMetrics["minTn"]
-
-    # return subset_acc, avgTp, avgTn, minTp, minTn
 
 
 def train_all_views():
     allViews = get_view_filename()
+
     for viewFilename in tqdm(allViews, desc="view"):
         fit(viewFilename)
 
