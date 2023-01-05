@@ -1,3 +1,4 @@
+import random
 import requests
 import pandas as pd
 import os
@@ -32,7 +33,7 @@ def download_worker(caseIdList, outputDir):
 
 if __name__ == "__main__":
     kwrgs = {
-        "endpoint_url": "http://192.168.1.4:8333",
+        "endpoint_url": "http://localhost:8333",
         "aws_access_key_id": "",
         "aws_secret_access_key": "",
     }
@@ -43,16 +44,17 @@ if __name__ == "__main__":
     os.makedirs(outputDir, exist_ok=True)
     localFiles = os.listdir(outputDir)
     localFilesCaseId = [int(x.split(".")[0])for x in localFiles]
-    wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
+    wr.config.s3_endpoint_url = "http://localhost:8333"
     bucket2 = "scope_case"
     caseDf = wr.s3.read_parquet(
         f"s3://{bucket2}/", dataset=True, columns=["CaseID", "Vehicle_Type"]
     )
-    targetVehicleType = "Saloon - 4 Dr"
+    targetVehicleType = "SUV - 5 Dr"
     caseDf = caseDf[caseDf["Vehicle_Type"] == targetVehicleType]
+    assert len(caseDf) > 0
     validCaseToDownload = caseDf["CaseID"].unique().tolist()
     downloadTaskbatch = []
-    batchSize = 20
+    batchSize = 3000
     workerNum = 5
     downloadedImgs = []
     paginator = cli.get_paginator("list_objects_v2")
@@ -66,8 +68,9 @@ if __name__ == "__main__":
     downloadedImgs = sorted(downloadedImgs)
     allCaseToDownload = set(
         validCaseToDownload).difference(set(downloadedImgs))
-    allCaseToDownload = allCaseToDownload.difference(set(localFilesCaseId))
-    allCaseToDownload = sorted(allCaseToDownload)
+    allCaseToDownload = list(
+        allCaseToDownload.difference(set(localFilesCaseId)))
+    random.shuffle(allCaseToDownload)
 
     for i in range(0, len(allCaseToDownload), batchSize):
         downloadTaskbatch.append(allCaseToDownload[i: i + batchSize])
