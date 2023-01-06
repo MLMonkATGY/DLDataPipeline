@@ -1,18 +1,18 @@
+from joblib import Parallel, delayed
+import io
+from tqdm import tqdm
+import glob
+from zipfile import ZipFile
+from pprint import pprint
+import boto3
+import functools
+import pyarrow as pa
 import os
 from typing import List
 import awswrangler as wr
 import pandas as pd
 
 pd.set_option("display.max_rows", 300)
-import pyarrow as pa
-import functools
-import boto3
-from pprint import pprint
-from zipfile import ZipFile
-import glob
-from tqdm import tqdm
-import io
-from joblib import Parallel, delayed
 
 
 def worker(allLocalZip: List, fileDf: pd.DataFrame):
@@ -65,10 +65,10 @@ if __name__ == "__main__":
         dataset=True,
     )
     fileDf.sort_values(by="CaseID", inplace=True)
-    srcDir = r"/run/user/1000/gvfs/smb-share:server=192.168.1.4,share=d$/batch_download"
+    srcDir = r"D:\tmp_download"
     allLocalZip = glob.glob(f"{srcDir}/**/*.zip", recursive=True)
     allTaskBatch = []
     batchSize = 30
     for i in range(0, len(allLocalZip), batchSize):
-        allTaskBatch.append(allLocalZip[i : i + batchSize])
-    Parallel(n_jobs=10)(delayed(worker)(tasks) for tasks in tqdm(allTaskBatch))
+        allTaskBatch.append(allLocalZip[i: i + batchSize])
+    Parallel(n_jobs=1)(delayed(worker)(tasks) for tasks in tqdm(allTaskBatch))

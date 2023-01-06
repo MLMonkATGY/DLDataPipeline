@@ -13,6 +13,7 @@ from joblib import Parallel, delayed
 from boto3.session import Session
 from loguru import logger
 import awswrangler as wr
+wr.config.s3_endpoint_url = "http://localhost:8333"
 
 
 def download_worker(caseIdList, outputDir):
@@ -44,15 +45,23 @@ if __name__ == "__main__":
     os.makedirs(outputDir, exist_ok=True)
     localFiles = os.listdir(outputDir)
     localFilesCaseId = [int(x.split(".")[0])for x in localFiles]
-    wr.config.s3_endpoint_url = "http://localhost:8333"
-    bucket2 = "scope_case"
-    caseDf = wr.s3.read_parquet(
-        f"s3://{bucket2}/", dataset=True, columns=["CaseID", "Vehicle_Type"]
+
+    partlistDf = wr.s3.read_parquet(
+        f"s3://multilabel_df", dataset=True
     )
-    targetVehicleType = "SUV - 5 Dr"
+    print(partlistDf.columns)
+    targetPart = "rear_quarter_rh"
+    bucket2 = "scope_case"
+    targetVehicleType = "Saloon - 4 Dr"
+    caseDf = wr.s3.read_parquet(
+        f"s3://{bucket2}/", dataset=True, partition_filter=lambda x: x["Vehicle_Type"] == targetVehicleType, columns=["CaseID", "Vehicle_Type"]
+    )
     caseDf = caseDf[caseDf["Vehicle_Type"] == targetVehicleType]
+    targetPartDf = partlistDf[(partlistDf["CaseID"].isin(
+        caseDf["CaseID"].unique().tolist())) & (partlistDf[targetPart] == 1)]
+    print(targetPartDf[["CaseID", targetPart]])
     assert len(caseDf) > 0
-    validCaseToDownload = caseDf["CaseID"].unique().tolist()
+    validCaseToDownload = targetPartDf["CaseID"].unique().tolist()
     downloadTaskbatch = []
     batchSize = 3000
     workerNum = 5
