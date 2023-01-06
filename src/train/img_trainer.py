@@ -40,7 +40,7 @@ import torchmetrics
 import dataclasses
 import shutil
 from torchmetrics.classification.accuracy import MultilabelAccuracy
-from torchmetrics import Precision, Recall
+from torchmetrics import Precision, Recall, F1Score
 from torchmetrics.classification import MultilabelPrecisionRecallCurve
 
 from torchmetrics.classification.confusion_matrix import (
@@ -70,8 +70,10 @@ from iterstrat.ml_stratifiers import (
 )
 import awswrangler as wr
 import optuna
+from sklearn.metrics import hamming_loss
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
-wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
+wr.config.s3_endpoint_url = "http://localhost:8333"
 
 np.random.seed(trainParams.randomSeed)
 torch.manual_seed(trainParams.randomSeed)
@@ -170,31 +172,12 @@ class FocalLoss2d(torch.nn.modules.loss._WeightedLoss):
         return focal_loss
 
 
-def hamming_score(y_true, y_pred):
-    acc_list = []
-    for i in range(y_true.shape[0]):
-        set_true = set(np.where(y_true[i])[0])
-        set_pred = set(np.where(y_pred[i])[0])
-        # print('\nset_true: {0}'.format(set_true))
-        # print('set_pred: {0}'.format(set_pred))
-        tmp_a = None
-        if len(set_true) == 0 and len(set_pred) == 0:
-            tmp_a = 1
-        elif len(set_true) == 0:
-            tmp_a = len(set_true.intersection(set_pred)) / float(len(set_pred))
-        else:
-            tmp_a = len(set_true.intersection(set_pred)) / float(len(set_true))
-        # print('tmp_a: {0}'.format(tmp_a))
-        acc_list.append(tmp_a)
-    return np.mean(acc_list), acc_list
-
-
 def create_model():
 
     # load Faster RCNN pre-trained model
 
-    model = torchvision.models.efficientnet_b0(
-        weights=torchvision.models.EfficientNet_B0_Weights.DEFAULT
+    model = torchvision.models.efficientnet_b1(
+        weights=torchvision.models.EfficientNet_B1_Weights.DEFAULT
     )
 
     num_ftrs = model.classifier[1].in_features
@@ -205,7 +188,7 @@ def create_model():
     return model
 
 
-def get_dataloader(y_train, y_eval):
+def get_dataloader(y_train, y_eval, y_test):
     trainTransform = A.Compose(
         [
             A.LongestMaxSize(trainParams.imgSize),
@@ -214,11 +197,13 @@ def get_dataloader(y_train, y_eval):
                 min_width=trainParams.imgSize,
                 border_mode=0,
             ),
-            A.ColorJitter(p=0.2),
-            A.CoarseDropout(max_height=16, max_width=16, p=0.2),
-            A.GaussianBlur(blur_limit=(1, 5), p=0.2),
-            A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
-            A.GridDistortion(border_mode=0, p=0.2),
+            A.ColorJitter(p=0.5),
+            A.Rotate(limit=180, p=0.3, border_mode=0),
+            # A.RandomGridShuffle(p=0.2),
+            # A.CoarseDropout(max_height=16, max_width=16, p=0.2),
+            # A.GaussianBlur(blur_limit=(1, 5), p=0.2),
+            # A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
+            # A.GridDistortion(border_mode=0, p=0.2),
             A.Normalize(),
             ToTensorV2(),
         ]
@@ -252,7 +237,7 @@ def get_dataloader(y_train, y_eval):
         batch_size=trainParams.trainBatchSize,
         num_workers=trainParams.trainCPUWorker,
     )
-    testDs = MultilabelDataset(y_eval, evalTransform)
+    testDs = MultilabelDataset(y_test, evalTransform)
     testLoader = DataLoader2(
         testDs,
         shuffle=False,
@@ -265,9 +250,9 @@ def get_dataloader(y_train, y_eval):
     assert set(testDs.df["filename"].unique().tolist()).isdisjoint(
         set(trainDs.df["filename"].unique().tolist())
     )
-    # assert set(testDs.df["filename"].unique().tolist()).isdisjoint(
-    #     set(evalDs.df["filename"].unique().tolist())
-    # )
+    assert set(testDs.df["filename"].unique().tolist()).isdisjoint(
+        set(evalDs.df["filename"].unique().tolist())
+    )
     return trainLoader, evalLoader, testLoader
 
 
@@ -285,6 +270,10 @@ class ProcessModel(pl.LightningModule):
         self.testConfMat = MultilabelConfusionMatrix(
             num_labels=len(trainParams.targetPart), normalize="true"
         ).to(self.device)
+
+        self.testF1Score = F1Score(
+            task="multilabel", num_labels=len(trainParams.targetPart)
+        ).to(self.device)
         self.trainConfMat = MultilabelConfusionMatrix(
             num_labels=len(trainParams.targetPart), normalize="true"
         ).to(self.device)
@@ -296,10 +285,10 @@ class ProcessModel(pl.LightningModule):
         self.testRecall = Recall(
             task="multilabel", num_labels=len(trainParams.targetPart)
         ).to(self.device)
-        self.criterion = FocalLoss2d()
         self.sigmoid = torch.nn.Sigmoid()
         self.current_pos_weight = pos_weight
         self.posThreshold = trainParams.posThreshold
+        self.criterion = FocalLoss2d(weight=torch.tensor(self.current_pos_weight))
         self.pr_curve = MultilabelPrecisionRecallCurve(
             num_labels=len(trainParams.targetPart), thresholds=11
         )
@@ -330,8 +319,7 @@ class ProcessModel(pl.LightningModule):
 
     def training_epoch_end(self, outputs) -> None:
         testAcc = self.trainAccMetric.compute()
-        self.log("t_acc", testAcc, prog_bar=True)
-        self.trainAccMetric.reset()
+        self.log("t_acc", testAcc, prog_bar=False)
         confMat = self.trainConfMat.compute()
         # tn = confMat[0][0]
         # fp = confMat[0][1]
@@ -355,7 +343,7 @@ class ProcessModel(pl.LightningModule):
         # self.log("train_fn", fn, prog_bar=False)
 
         self.trainConfMat.reset()
-
+        self.trainAccMetric.reset()
         return super().training_epoch_end(outputs)
 
     def validation_step(self, batch, idx):
@@ -371,6 +359,7 @@ class ProcessModel(pl.LightningModule):
         self.testConfMat.update(preds, targets.type(torch.int64))
         self.testPrecision.update(preds, targets.type(torch.int64))
         self.testRecall.update(preds, targets.type(torch.int64))
+        self.testF1Score.update(preds, targets.type(torch.int64))
         self.log("e_loss", loss, prog_bar=True)
 
         return preds, targets
@@ -379,16 +368,19 @@ class ProcessModel(pl.LightningModule):
         testAcc = self.testAccMetric.compute()
         testPrecision = self.testPrecision.compute()
         testRecall = self.testRecall.compute()
+        testF1 = self.testF1Score.compute()
         preds = torch.cat([x[0] for x in val_step_outputs])
         targets = torch.cat([x[1] for x in val_step_outputs])
 
         exactAcc = accuracy_score(targets.cpu().numpy(), preds.cpu().numpy())
-        hammingScore, _ = hamming_score(targets.cpu().numpy(), preds.cpu().numpy())
+        hammingLoss = hamming_loss(targets.cpu().numpy(), preds.cpu().numpy())
+        hammingScore = 1 - hammingLoss
         self.log("e_acc", testAcc, prog_bar=False)
         self.log("precision", testPrecision, prog_bar=False)
         self.log("recall", testRecall, prog_bar=False)
         self.log("exact", exactAcc, prog_bar=False)
         self.log("subset", hammingScore, prog_bar=True)
+        self.log("f1", testF1, prog_bar=True)
 
         confMat = self.testConfMat.compute()
         allTp = []
@@ -411,7 +403,7 @@ class ProcessModel(pl.LightningModule):
         self.testRecall.reset()
         self.testPrecision.reset()
         self.testAccMetric.reset()
-
+        self.testF1Score.reset()
         return super().validation_epoch_end(val_step_outputs)
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
@@ -459,7 +451,7 @@ def train_eval(
 
     trainProcessModel = ProcessModel(model, pos_weight=posWeight)
     trainer1 = pl.Trainer(
-        # accumulate_grad_batches=10,
+        accumulate_grad_batches=5,
         default_root_dir=f"./outputs/{trainParams.localSaveDir}",
         max_epochs=trainParams.maxEpoch,
         accelerator="gpu",
@@ -470,10 +462,13 @@ def train_eval(
         precision=trainParams.trainingPrecision,
         logger=logger,
         log_every_n_steps=30,
-        callbacks=[checkpoint_callback],
+        callbacks=[
+            checkpoint_callback,
+            EarlyStopping(monitor="f1", mode="max", patience=10),
+        ],
         detect_anomaly=False,
         # limit_train_batches=1,
-        # limit_val_batches=5,
+        # limit_val_batches=10,
         # limit_predict_batches=30,
     )
 
@@ -582,7 +577,7 @@ def get_view_filename():
 
 
 def get_label_df(filename):
-    labelDf = wr.s3.read_csv(path=f"s3://imgs_labels/{filename}")
+    labelDf = wr.s3.read_csv(path=f"s3://imgs_labels_3/{filename}")
 
     return labelDf
 
@@ -592,19 +587,41 @@ def gen_dataset(viewFilename):
     testCaseId = pd.read_csv(
         "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/test_set/test_case_id.csv"
     )["CaseID"].tolist()
-    # testLabelDf = labelDf[labelDf["CaseID"].isin(testCaseId)]
-    # labelDf = labelDf[~labelDf["CaseID"].isin(testCaseId)].reset_index()
-    # logger.success(f"Test size : {len(testLabelDf)}")
-    allTargetParts = [x for x in labelDf.filter(regex="vision_*").columns]
+    testLabelDf = labelDf[labelDf["CaseID"].isin(testCaseId)]
+    labelDf = labelDf[~labelDf["CaseID"].isin(testCaseId)].reset_index()
+    logger.success(f"Test size : {len(testLabelDf)}")
+    allPartsFound = [x for x in labelDf.filter(regex="vision_*").columns]
+    allVisionFeatures = [
+        "vision_bonnet",
+        "vision_bumper_front",
+        "vision_engine",
+        "vision_grille",
+        "vision_headlamp_lh",
+        "vision_headlamp_rh",
+        "vision_bumper_rear",
+        "vision_front_panel",
+        "vision_non_external",
+        "vision_fender_front_lh",
+        "vision_fender_front_rh",
+        "vision_rear_quarter_lh",
+        "vision_tail_lamp_lh",
+        "vision_tail_lamp_rh",
+        "vision_windscreen_front",
+        "vision_rear_compartment",
+        "vision_rear_panel",
+        "vision_rear_quarter_rh",
+        "vision_windscreen_rear",
+    ]
+    allTargetParts = sorted(list(set(allVisionFeatures) & set(allPartsFound)))
     trainParams.runName = viewFilename
     trainParams.targetPart = allTargetParts
     trainParams.imgAngle = viewFilename.replace("_img_labels.csv", "")
 
     y = labelDf[allTargetParts]
     X = labelDf["filename"]
-    # test_y = testLabelDf[allTargetParts]
-    # test_X = testLabelDf["filename"]
-    return X, y
+    test_y = testLabelDf[allTargetParts]
+    test_X = testLabelDf["filename"]
+    return X, y, test_X, test_y
 
 
 def get_pos_weight(trial, allColName, viewFilename) -> List[float]:
@@ -635,21 +652,23 @@ def get_pos_weight(trial, allColName, viewFilename) -> List[float]:
 def select_best_threshold(df: pd.DataFrame):
     df.sort_values(by="f1", ascending=False, inplace=True)
     allBestThreshold = df.groupby("part").head(1)
+    # """
+    # TODO
+    # """
+    # allBestThreshold["threshold"] = 0.5
     return allBestThreshold
 
 
 def fit(viewFilename):
 
-    X, y = gen_dataset(viewFilename)
+    X, y, test_X, test_y = gen_dataset(viewFilename)
     mulitlearnStratify = MultilabelStratifiedKFold(
-        n_splits=trainParams.kFoldSplit, shuffle=True
+        n_splits=trainParams.kFoldSplit,
+        shuffle=True,
+        random_state=trainParams.randomSeed,
     )
     allColName = y.columns.tolist()
     trainParams.currentColName = allColName
-    # posWeight = get_pos_weight(trial, allColName, viewFilename)
-    # print(X.dtypes)
-    # print(y.dtypes)
-
     viewCompletePredDf = pd.DataFrame()
     viewCompletePRThreshold = pd.DataFrame()
 
@@ -658,15 +677,19 @@ def fit(viewFilename):
         y_train, y_eval = y.loc[train_index], y.loc[test_index]
         y_train["filename"] = X_train
         y_eval["filename"] = X_eval
-        # y_test["filename"] = x_test
+        test_y["filename"] = test_X
 
-        trainLoader, valLoader, testLoader = get_dataloader(y_train, y_eval)
+        trainLoader, valLoader, testLoader = get_dataloader(y_train, y_eval, test_y)
         posWeight = trainLoader.dataset.allPosWeight
         predDf, expId, allPRByPart = train_eval(
             trainLoader, valLoader, testLoader, posWeight, kfoldId + 1
         )
         viewCompletePRThreshold = pd.concat([viewCompletePRThreshold, allPRByPart])
         viewCompletePredDf = pd.concat([viewCompletePredDf, predDf])
+        """
+        #TODO : No more cross validations
+        """
+        break
     bestThresholdDf = select_best_threshold(viewCompletePRThreshold)
     viewCompletePredDf = viewCompletePredDf.merge(
         bestThresholdDf, left_on="parts", right_on="part"
@@ -681,40 +704,10 @@ def train_all_views():
         fit(viewFilename)
 
 
-def tune(targetFilename):
-    study_name = targetFilename.split(".")[0]  # Unique identifier of the study.
-    storage_name = f"sqlite:////home/alextay96/Desktop/new_workspace/DLDataPipeline/data/hyperparams/{trainParams.vehicleType}_{study_name}.db".format(
-        study_name
-    )
-    print(f"Study name : {storage_name}")
-    study = optuna.create_study(
-        study_name=study_name,
-        directions=[
-            "maximize",
-            "maximize",
-            "maximize",
-            "maximize",
-            "maximize",
-        ],
-        storage=storage_name,
-        load_if_exists=True,
-    )
-
-    def func2(trial):
-        return fit(targetFilename, trial)
-
-    study.optimize(func2, timeout=trainParams.tuningTimeout, show_progress_bar=True)
-
-
-def tune_all_view():
-    allViews = get_view_filename()
-    for viewFilename in tqdm(allViews, desc="view"):
-        viewName = viewFilename
-        tune(viewFilename)
-
-
 if __name__ == "__main__":
-    allVehicleType = ["Saloon - 4 Dr", "Hatchback - 5 Dr", "SUV - 5 Dr"]
+    # allVehicleType = ["Saloon - 4 Dr", "Hatchback - 5 Dr", "SUV - 5 Dr"]
+    allVehicleType = ["SUV - 5 Dr"]
+
     for vehicleType in allVehicleType:
         trainParams.vehicleType = vehicleType
         train_all_views()

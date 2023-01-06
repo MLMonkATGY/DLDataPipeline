@@ -78,7 +78,7 @@ def combine_df(expId, vehicleType):
 
 
 def get_raw_multilabel_df():
-    wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
+    wr.config.s3_endpoint_url = "http://localhost:8333"
     srcBucketName = "multilabel_df"
     labelDf = wr.s3.read_parquet(path=f"s3://{srcBucketName}/", dataset=True)
     return labelDf
@@ -232,7 +232,7 @@ def eval_by_parts(allParts, partPerfDf):
 
 
 if __name__ == "__main__":
-    expId = 119
+    expId = 128
     allVehicleType = ["Saloon - 4 Dr", "Hatchback - 5 Dr", "SUV - 5 Dr"]
     for vehicleType in allVehicleType:
         get_cv_pred(expId, vehicleType)

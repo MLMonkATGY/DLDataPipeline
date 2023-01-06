@@ -32,7 +32,7 @@ def download_worker(caseIdList, outputDir):
 
 if __name__ == "__main__":
     kwrgs = {
-        "endpoint_url": "http://192.168.1.4:8333",
+        "endpoint_url": "http://localhost:8333",
         "aws_access_key_id": "",
         "aws_secret_access_key": "",
     }
@@ -42,15 +42,17 @@ if __name__ == "__main__":
     outputDir = r"D:\tmp_download"
     os.makedirs(outputDir, exist_ok=True)
     localFiles = os.listdir(outputDir)
-    localFilesCaseId = [int(x.split(".")[0])for x in localFiles]
-    wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
+    localFilesCaseId = [int(x.split(".")[0]) for x in localFiles]
+    wr.config.s3_endpoint_url = "http://localhost:8333"
     bucket2 = "scope_case"
     caseDf = wr.s3.read_parquet(
         f"s3://{bucket2}/", dataset=True, columns=["CaseID", "Vehicle_Type"]
     )
     targetVehicleType = "Saloon - 4 Dr"
     caseDf = caseDf[caseDf["Vehicle_Type"] == targetVehicleType]
+
     validCaseToDownload = caseDf["CaseID"].unique().tolist()
+
     downloadTaskbatch = []
     batchSize = 20
     workerNum = 5
@@ -60,17 +62,15 @@ if __name__ == "__main__":
     page_iterator = paginator.paginate(**operation_parameters)
     for page in tqdm(page_iterator):
         pageContent = page["Contents"]
-        downloadedCaseId = set([int(x["Key"].split("_")[0])
-                               for x in pageContent])
+        downloadedCaseId = set([int(x["Key"].split("_")[0]) for x in pageContent])
         downloadedImgs.extend(downloadedCaseId)
     downloadedImgs = sorted(downloadedImgs)
-    allCaseToDownload = set(
-        validCaseToDownload).difference(set(downloadedImgs))
+    allCaseToDownload = set(validCaseToDownload).difference(set(downloadedImgs))
     allCaseToDownload = allCaseToDownload.difference(set(localFilesCaseId))
     allCaseToDownload = sorted(allCaseToDownload)
 
     for i in range(0, len(allCaseToDownload), batchSize):
-        downloadTaskbatch.append(allCaseToDownload[i: i + batchSize])
+        downloadTaskbatch.append(allCaseToDownload[i : i + batchSize])
     Parallel(n_jobs=workerNum)(
         delayed(download_worker)(batchTask, outputDir)
         for batchTask in tqdm(downloadTaskbatch, desc="batch")
