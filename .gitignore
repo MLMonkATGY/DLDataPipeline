@@ -20,3 +20,4 @@ visualization/
 AutoML*/
 src/clean/img_align_celeba/
 src/clean/weights_model/
+data/build_dataset/aum_models/
