@@ -24,7 +24,7 @@ from pathlib import Path
 import ujson as json
 
 
-def get_labels(partName):
+def get_labels(partName: str, outputDir: str):
     targetPart = partName.replace("vision_", "")
 
     wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
@@ -33,9 +33,7 @@ def get_labels(partName):
     def myFilter(x):
         return x["Vehicle_Type"] in vehicleType
 
-    baseOutputDir = Path(
-        "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset"
-    )
+    baseOutputDir = Path(outputDir)
     filesDf = wr.s3.read_parquet(
         f"s3://scope_file/", dataset=True, columns=["CaseID", "iDOCID"]
     )
@@ -132,5 +130,5 @@ def get_labels(partName):
 
 
 if __name__ == "__main__":
-
-    get_labels("vision_")
+    outputDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/predict"
+    get_labels("vision_", outputDir)

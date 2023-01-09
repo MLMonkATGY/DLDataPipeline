@@ -43,7 +43,7 @@ def get_files(labelFile):
     batchSize = 1000
     for i in range(0, len(downloadFileDf), batchSize):
         batchTask.append(downloadFileDf.iloc[i : i + batchSize])
-    Parallel(n_jobs=1)(
+    Parallel(n_jobs=10)(
         delayed(transport_worker)(taskDf, sinkDir)
         for taskDf in tqdm(batchTask, desc="tasks")
     )

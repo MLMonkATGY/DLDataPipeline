@@ -215,10 +215,10 @@ def get_dataloader(y_train, y_test):
                 border_mode=0,
             ),
             A.ColorJitter(p=0.2),
-            A.CoarseDropout(max_height=16, max_width=16, p=0.2),
-            A.GaussianBlur(blur_limit=(1, 5), p=0.2),
-            A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
-            A.GridDistortion(border_mode=0, p=0.2),
+            # A.CoarseDropout(max_height=16, max_width=16, p=0.2),
+            # A.GaussianBlur(blur_limit=(1, 5), p=0.2),
+            # A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
+            # A.GridDistortion(border_mode=0, p=0.2),
             A.Normalize(),
             ToTensorV2(),
         ]
@@ -582,8 +582,9 @@ def get_view_filename():
 
 
 def get_label_df(filename):
-    labelDf = wr.s3.read_csv(path=f"s3://imgs_labels_4/{filename}")
-
+    # labelDf = wr.s3.read_csv(path=f"s3://imgs_labels_4/{filename}")
+    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/balance_labels"
+    labelDf = pd.read_csv(os.path.join(srcDir, filename)).sample(n=10e3)
     return labelDf
 
 
@@ -654,6 +655,7 @@ def fit(
         y_train, y_test = y.loc[train_index], y.loc[test_index]
         y_train["filename"] = X_train
         y_test["filename"] = X_test
+
         trainLoader, valLoader, testLoader = get_dataloader(y_train, y_test)
         posWeight = trainLoader.dataset.allPosWeight
         predDf, expId, allPRByPart = train_eval(

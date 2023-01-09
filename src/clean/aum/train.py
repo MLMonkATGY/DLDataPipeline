@@ -67,13 +67,17 @@ class ProcessModel(pl.LightningModule):
         pl.seed_everything(99)
 
         self.model = model
-        self.testAccMetric = MulticlassAccuracy(num_classes=2)
-        self.trainAccMetric = MulticlassAccuracy(num_classes=2)
+        self.learning_rate = lr
+        self.part = part
         if isFiltered:
             self.aum_dir = f"data/build_dataset/aum/{part}_clean"
 
         else:
             self.aum_dir = f"data/build_dataset/aum/{part}"
+        self.save_hyperparameters()
+
+        self.testAccMetric = MulticlassAccuracy(num_classes=2)
+        self.trainAccMetric = MulticlassAccuracy(num_classes=2)
 
         os.makedirs(self.aum_dir, exist_ok=True)
         self.aum_calculator = AUMCalculator(self.aum_dir, compressed=True)
@@ -93,9 +97,6 @@ class ProcessModel(pl.LightningModule):
         self.testRecall = Recall(task="multiclass", num_classes=2).to(self.device)
         self.criterion = torch.nn.CrossEntropyLoss()
         self.pr_curve = MulticlassPrecisionRecallCurve(num_classes=2, thresholds=11)
-        self.learning_rate = lr
-        self.part = part
-        self.save_hyperparameters()
 
     def configure_optimizers(self):
         if self.learning_rate < 1e-2:
@@ -453,23 +454,23 @@ def train_original(partName: str):
 
 if __name__ == "__main__":
     allParts = [
-        "vision_bonnet",
-        "vision_bumper_front",
-        "vision_engine",
-        "vision_grille",
-        "vision_headlamp_lh",
-        "vision_headlamp_rh",
-        "vision_bumper_rear",
-        "vision_front_panel",
-        "vision_fender_front_lh",
-        "vision_fender_front_rh",
-        "vision_rear_quarter_lh",
-        "vision_tail_lamp_lh",
-        "vision_tail_lamp_rh",
-        "vision_windscreen_front",
-        "vision_rear_compartment",
-        "vision_rear_panel",
-        "vision_rear_quarter_rh",
+        # "vision_bonnet",
+        # "vision_bumper_front",
+        # "vision_engine",
+        # "vision_grille",
+        # "vision_headlamp_lh",
+        # "vision_headlamp_rh",
+        # "vision_bumper_rear",
+        # "vision_front_panel",
+        # "vision_fender_front_lh",
+        # "vision_fender_front_rh",
+        # "vision_rear_quarter_lh",
+        # "vision_tail_lamp_lh",
+        # "vision_tail_lamp_rh",
+        # "vision_windscreen_front",
+        # "vision_rear_compartment",
+        # "vision_rear_panel",
+        # "vision_rear_quarter_rh",
         "vision_windscreen_rear",
     ]
     for p in tqdm(allParts):

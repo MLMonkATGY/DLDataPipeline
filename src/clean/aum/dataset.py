@@ -48,6 +48,43 @@ class ImageDataset(Dataset):
         return data
 
 
+class PredictionImageDataset(Dataset):
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        img_dir: str,
+        targetName: str,
+        targetView: str,
+        transform=None,
+    ):
+        self.df: pd.DataFrame = df
+        self.srcImgDir = img_dir
+        self.targetName = targetName
+        self.transform = transform
+        self.targetView = targetView
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        targetRow = self.df.iloc[idx]
+        target = torch.tensor(targetRow[self.targetName])
+        targetFilePath = os.path.join(self.srcImgDir, targetRow["filename"])
+        image = cv2.imread(targetFilePath)
+
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        sample = self.transform(image=image)
+        data = {
+            "img": sample["image"],
+            "target": target,
+            "file": targetFilePath,
+            "filename": targetRow["filename"],
+            "vehicleType": targetRow["Vehicle_Type"],
+            "model": targetRow["Model"],
+        }
+        return data
+
+
 if __name__ == "__main__":
     trainTransform = A.Compose(
         [
