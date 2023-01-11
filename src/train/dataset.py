@@ -40,7 +40,10 @@ class MultilabelDataset(Dataset):
 
     def __getitem__(self, idx):
         targetRow = self.df.iloc[idx]
+
         targetFilePath = os.path.join(self.srcImgDir, targetRow["filename"])
+        if not os.path.exists(targetFilePath):
+            print(targetFilePath)
         label = targetRow[self.colName]
         labelTensor = torch.tensor(label, dtype=torch.float32)
         image = cv2.imread(targetFilePath)

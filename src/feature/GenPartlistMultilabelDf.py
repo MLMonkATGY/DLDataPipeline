@@ -36,12 +36,12 @@ def worker(caseIdList, labelDf, rawMapping):
         caseData["CaseID"] = targets.iloc[0]["CaseID"]
         for col in structuredFeatures:
             caseData[col] = targets.iloc[0][col]
-        lvl2DmgParts = targets["lvl_2_desc"].tolist()
+        # lvl2DmgParts = targets["lvl_2_desc"].tolist()
         lvl3DmgParts = targets["lvl_3_desc"].tolist()
 
         for part in lvl3DmgParts:
             caseData[f"vision_{part}"] = 1
-        for part in lvl2DmgParts:
+        for part in lvl3DmgParts:
             caseData[part] = 1
 
         allPayload.append(caseData)
@@ -66,10 +66,10 @@ if __name__ == "__main__":
     )
     labelDf = labelDf.merge(caseDf, on="CaseID")
     allLvl3Labels = labelDf["lvl_3_desc"].unique().tolist()
-    allLvl2Labels = labelDf["lvl_2_desc"].unique().tolist()
+    # allLvl2Labels = labelDf["lvl_2_desc"].unique().tolist()
 
     rawMapping = {f"vision_{x}": 0 for x in allLvl3Labels}
-    for x in allLvl2Labels:
+    for x in allLvl3Labels:
         rawMapping[x] = 0
     allPayload = []
     allDf = []
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     worker_num = 3
     sampleBatch = 40
     for i in range(0, len(validCaseId), batchSize):
-        tasks.append(validCaseId[i: i + batchSize])
+        tasks.append(validCaseId[i : i + batchSize])
     result = Parallel(n_jobs=worker_num)(
         delayed(worker)(task, labelDf, rawMapping) for task in tqdm(tasks)
     )
@@ -96,7 +96,7 @@ if __name__ == "__main__":
             # "Username": "aaa",
         },
     )
-    outputBucketName = "multilabel_df_3"
+    outputBucketName = "multilabel_df_lvl_3"
     cli.create_bucket(Bucket=outputBucketName)
     wr.s3.to_parquet(
         df=multilabelDf,

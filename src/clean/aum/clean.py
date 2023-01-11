@@ -80,9 +80,9 @@ def merge_aum(predDf: pd.DataFrame, aumDf: pd.DataFrame):
 
 
 def select_quality_samples(predDf: pd.DataFrame):
-    aumThreshold = predDf["aum"].quantile(0.2)
-    if aumThreshold < 0.2:
-        aumThreshold = 0.2
+    aumThreshold = predDf["aum"].quantile(0.3)
+    if aumThreshold < 0.4:
+        aumThreshold = 0.4
     oodScoreThreshold = predDf["ood_score"].quantile(0.1)
     print(f"OOD threshold : {oodScoreThreshold}")
     trainDf = predDf.dropna(subset="aum")

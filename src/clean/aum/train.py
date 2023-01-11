@@ -56,6 +56,9 @@ import cleanlab
 import itertools
 from cleanlab.outlier import OutOfDistribution
 import glob
+import awswrangler as wr
+
+wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
 
 
 class ProcessModel(pl.LightningModule):
@@ -66,15 +69,15 @@ class ProcessModel(pl.LightningModule):
         ).__init__()
         pl.seed_everything(99)
 
-        self.model = model
         self.learning_rate = lr
         self.part = part
         if isFiltered:
-            self.aum_dir = f"data/build_dataset/aum/{part}_clean"
+            self.aum_dir = f"data/build_dataset/aum_high_resolution/{part}_clean"
 
         else:
-            self.aum_dir = f"data/build_dataset/aum/{part}"
-        self.save_hyperparameters()
+            self.aum_dir = f"data/build_dataset/aum_high_resolution/{part}"
+        self.save_hyperparameters(ignore="model")
+        self.model = model
 
         self.testAccMetric = MulticlassAccuracy(num_classes=2)
         self.trainAccMetric = MulticlassAccuracy(num_classes=2)
@@ -100,8 +103,10 @@ class ProcessModel(pl.LightningModule):
 
     def configure_optimizers(self):
         if self.learning_rate < 1e-2:
+            print("Using Adam optimizer")
             return torch.optim.Adam(self.parameters(), self.learning_rate)
         else:
+            print("Using SGD optimizer")
             return torch.optim.SGD(self.parameters(), self.learning_rate)
 
     def forward(self, imgs):
@@ -248,11 +253,12 @@ def train_eval(
 
     trainProcessModel = ProcessModel(model, partName, lr, isFiltered)
     trainer1 = pl.Trainer(
-        default_root_dir=f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_models/",
+        # accumulate_grad_batches=10,
+        default_root_dir=f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/",
         max_epochs=train_epoch,
         accelerator="gpu",
         devices=1,
-        check_val_every_n_epoch=3,
+        check_val_every_n_epoch=5,
         num_sanity_val_steps=0,
         benchmark=True,
         precision=16,
@@ -261,7 +267,7 @@ def train_eval(
         callbacks=[checkpoint_callback],
         detect_anomaly=False,
         # limit_train_batches=1,
-        # limit_val_batches=
+        # limit_val_batches=1,
     )
 
     trainer1.fit(
@@ -282,9 +288,9 @@ def train_eval(
 
 
 def get_dataloader(y_train, y_eval, y_test, targetName, img_dir):
-    batchSize = 100
-    trainCPUWorker = 10
-    imgSize = 300
+    batchSize = 20
+    trainCPUWorker = 8
+    imgSize = 640
     trainTransform = A.Compose(
         [
             A.LongestMaxSize(imgSize),
@@ -293,9 +299,9 @@ def get_dataloader(y_train, y_eval, y_test, targetName, img_dir):
                 min_width=imgSize,
                 border_mode=0,
             ),
-            A.ColorJitter(p=0.2),
-            A.Rotate(border_mode=0, p=0.2),
-            A.GaussianBlur(blur_limit=(1, 5), p=0.2),
+            A.ColorJitter(p=0.5),
+            # A.Rotate(border_mode=0, p=0.2),
+            # A.GaussianBlur(blur_limit=(1, 5), p=0.2),
             # A.Downscale(scale_min=0.7, scale_max=0.8, p=0.2),
             A.Normalize(),
             ToTensorV2(),
@@ -322,6 +328,7 @@ def get_dataloader(y_train, y_eval, y_test, targetName, img_dir):
         num_workers=trainCPUWorker,
         pin_memory=False,
         persistent_workers=False,
+        drop_last=True,
     )
     evalDs = ImageDataset(y_eval, img_dir, targetName, evalTransform)
     evalLoader = DataLoader2(
@@ -349,17 +356,46 @@ def get_dataloader(y_train, y_eval, y_test, targetName, img_dir):
     return trainLoader, evalLoader, testLoader
 
 
-def gen_test_label_df(df: pd.DataFrame, targetCols: str):
-    testDf = df.groupby(targetCols).sample(500)
+def gen_test_label_df(df: pd.DataFrame, targetCols: str, scopeCaseDf: pd.DataFrame):
+    # testDf = df.groupby(targetCols).sample(500)
+    testCase2 = pd.read_csv(
+        "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/test_set/test_case_id.csv"
+    )
+    testDf = df[df["CaseID"].isin(testCase2["CaseID"].unique().tolist())]
     df = df[~df["CaseID"].isin(testDf["CaseID"].unique().tolist())]
+    print(df.columns)
+    df = df.merge(scopeCaseDf, on="CaseID")
+    modelTypeLabelDf = (
+        df.groupby(["Model"])["CaseID"]
+        .count()
+        .reset_index()
+        .rename(columns={"CaseID": "count"})
+        .sort_values(by="count", ascending=False)
+        .head(100)
+    )
+    # print(modelTypeLabelDf[["Model", "Vehicle_Type"]].value_counts())
+    df = (
+        df[df["Model"].isin(modelTypeLabelDf["Model"].unique().tolist())]
+        .sample(frac=1)
+        .groupby([targetCols, "Model"])
+        .head(15)
+    )
+    print(df[targetCols].value_counts())
+    print(f"Train Eval set : {len(df)}")
     return df, testDf
 
 
-def fit_clean(labelFile: str, partName: str, imgDir: str, isFiltered=False):
+def fit_clean(
+    labelFile: str,
+    partName: str,
+    imgDir: str,
+    scopeCaseDf: pd.DataFrame,
+    isFiltered=False,
+):
     df = pd.read_csv(labelFile)
     viewPartId = labelFile.split("/")[-1].split(".")[0]
     targetCols = df.filter(regex="vision_*").columns[0]
-    df, testDf = gen_test_label_df(df, partName)
+    df, testDf = gen_test_label_df(df, partName, scopeCaseDf)
 
     X_train, X_eval, y_train, y_eval = train_test_split(
         df[["filename", "CaseID"]],
@@ -405,7 +441,7 @@ def fit_clean(labelFile: str, partName: str, imgDir: str, isFiltered=False):
         df[["filename", "CaseID"]],
         df[targetCols],
         stratify=df[targetCols],
-        test_size=0.2,
+        test_size=0.1,
     )
     y_train = y_train.to_frame()
     y_eval = y_eval.to_frame()
@@ -440,37 +476,46 @@ def train_original(partName: str):
     imgDir = (
         "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/imgs"
     )
-    allLocalFiles = [x.split("/")[-1] for x in glob.glob(f"{imgDir}/**.JPG")]
-
+    ddff = pd.read_parquet(
+        "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/local/local_files_metadata.parquet"
+    )
+    scopeCaseDf = wr.s3.read_parquet(
+        path=f"s3://scope_case/",
+        dataset=True,
+        columns=["CaseID", "Vehicle_Type", "Model"],
+    )
+    print(scopeCaseDf.columns)
+    # allLocalFiles = [x.split("/")[-1] for x in glob.glob(f"{imgDir}/**.JPG")]
+    print(ddff.columns)
     for labelFile in allViewFilesByPart:
         # labelFile = f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/{partName2}_Rear View_img_labels.csv"
-        df = pd.read_csv(labelFile)
-        requiredFiles = df["filename"].tolist()
-        localReqFiles = set(allLocalFiles) & set(requiredFiles)
-        if len(localReqFiles) < len(requiredFiles):
-            get_files(labelFile)
-        fit_clean(labelFile, partName, imgDir, isFiltered=False)
+        # df = pd.read_csv(labelFile)
+        # requiredFiles = df["filename"].tolist()
+        # localReqFiles = set(allLocalFiles) & set(requiredFiles)
+        # if len(localReqFiles) < len(requiredFiles):
+        #     get_files(labelFile)
+        fit_clean(labelFile, partName, imgDir, scopeCaseDf, isFiltered=False)
 
 
 if __name__ == "__main__":
     allParts = [
-        # "vision_bonnet",
-        # "vision_bumper_front",
-        # "vision_engine",
-        # "vision_grille",
-        # "vision_headlamp_lh",
-        # "vision_headlamp_rh",
-        # "vision_bumper_rear",
-        # "vision_front_panel",
-        # "vision_fender_front_lh",
-        # "vision_fender_front_rh",
-        # "vision_rear_quarter_lh",
-        # "vision_tail_lamp_lh",
-        # "vision_tail_lamp_rh",
-        # "vision_windscreen_front",
-        # "vision_rear_compartment",
-        # "vision_rear_panel",
-        # "vision_rear_quarter_rh",
+        "vision_bonnet",
+        "vision_bumper_front",
+        "vision_engine",
+        "vision_grille",
+        "vision_headlamp_lh",
+        "vision_headlamp_rh",
+        "vision_bumper_rear",
+        "vision_front_panel",
+        "vision_fender_front_lh",
+        "vision_fender_front_rh",
+        "vision_rear_quarter_lh",
+        "vision_tail_lamp_lh",
+        "vision_tail_lamp_rh",
+        "vision_windscreen_front",
+        "vision_rear_compartment",
+        "vision_rear_panel",
+        "vision_rear_quarter_rh",
         "vision_windscreen_rear",
     ]
     for p in tqdm(allParts):

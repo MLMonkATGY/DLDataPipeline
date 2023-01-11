@@ -40,7 +40,7 @@ import torchmetrics
 import dataclasses
 import shutil
 from torchmetrics.classification.accuracy import MultilabelAccuracy
-from torchmetrics import Precision, Recall
+from torchmetrics import Precision, Recall, F1Score
 from torchmetrics.classification import MultilabelPrecisionRecallCurve
 
 from torchmetrics.classification.confusion_matrix import (
@@ -56,7 +56,7 @@ import glob
 from cleanlab.classification import CleanLearning
 import pathlib
 import mlflow
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, hamming_loss
 from skmultilearn.model_selection.measures import get_combination_wise_output_matrix
 from skmultilearn.model_selection import (
     iterative_train_test_split,
@@ -170,31 +170,12 @@ class FocalLoss2d(torch.nn.modules.loss._WeightedLoss):
         return focal_loss
 
 
-def hamming_score(y_true, y_pred):
-    acc_list = []
-    for i in range(y_true.shape[0]):
-        set_true = set(np.where(y_true[i])[0])
-        set_pred = set(np.where(y_pred[i])[0])
-        # print('\nset_true: {0}'.format(set_true))
-        # print('set_pred: {0}'.format(set_pred))
-        tmp_a = None
-        if len(set_true) == 0 and len(set_pred) == 0:
-            tmp_a = 1
-        elif len(set_true) == 0:
-            tmp_a = len(set_true.intersection(set_pred)) / float(len(set_pred))
-        else:
-            tmp_a = len(set_true.intersection(set_pred)) / float(len(set_true))
-        # print('tmp_a: {0}'.format(tmp_a))
-        acc_list.append(tmp_a)
-    return np.mean(acc_list), acc_list
-
-
 def create_model():
 
     # load Faster RCNN pre-trained model
 
-    model = torchvision.models.efficientnet_b0(
-        weights=torchvision.models.EfficientNet_B0_Weights.DEFAULT
+    model = torchvision.models.efficientnet_b1(
+        weights=torchvision.models.EfficientNet_B1_Weights.DEFAULT
     )
 
     num_ftrs = model.classifier[1].in_features
@@ -205,7 +186,7 @@ def create_model():
     return model
 
 
-def get_dataloader(y_train, y_test):
+def get_dataloader(y_train, y_eval, y_test):
     trainTransform = A.Compose(
         [
             A.LongestMaxSize(trainParams.imgSize),
@@ -214,7 +195,10 @@ def get_dataloader(y_train, y_test):
                 min_width=trainParams.imgSize,
                 border_mode=0,
             ),
-            A.ColorJitter(p=0.2),
+            A.ColorJitter(p=0.3),
+            A.RandomGridShuffle(p=0.3),
+            # A.Rotate(border_mode=0, p=0.2),
+            # A.GaussianBlur(blur_limit=(1, 5), p=0.3),
             # A.CoarseDropout(max_height=16, max_width=16, p=0.2),
             # A.GaussianBlur(blur_limit=(1, 5), p=0.2),
             # A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
@@ -242,10 +226,10 @@ def get_dataloader(y_train, y_test):
         shuffle=True,
         batch_size=trainParams.trainBatchSize,
         num_workers=trainParams.trainCPUWorker,
-        pin_memory=True,
-        persistent_workers=True,
+        pin_memory=False,
+        persistent_workers=False,
     )
-    evalDs = MultilabelDataset(y_test, evalTransform)
+    evalDs = MultilabelDataset(y_eval, evalTransform)
     evalLoader = DataLoader2(
         evalDs,
         shuffle=False,
@@ -293,13 +277,22 @@ class ProcessModel(pl.LightningModule):
         self.testRecall = Recall(
             task="multilabel", num_labels=len(trainParams.targetPart)
         ).to(self.device)
-        self.criterion = FocalLoss2d()
+        self.criterion = FocalLoss2d(
+            # pos_weight=torch.tensor([2] * len(trainParams.targetPart))
+        )
         self.sigmoid = torch.nn.Sigmoid()
         self.current_pos_weight = pos_weight
         self.posThreshold = trainParams.posThreshold
         self.pr_curve = MultilabelPrecisionRecallCurve(
             num_labels=len(trainParams.targetPart), thresholds=11
         )
+        self.testF1Score = F1Score(
+            task="multilabel", num_labels=len(trainParams.targetPart)
+        ).to(self.device)
+        self.trainF1Score = F1Score(
+            task="multilabel", num_labels=len(trainParams.targetPart)
+        ).to(self.device)
+
         self.save_hyperparameters()
 
     def configure_optimizers(self):
@@ -322,6 +315,8 @@ class ProcessModel(pl.LightningModule):
         preds = logit > self.posThreshold
         self.trainAccMetric.update(preds, targets)
         self.trainConfMat.update(preds, targets.type(torch.int64))
+        self.trainF1Score.update(preds, targets.type(torch.int64))
+
         self.log("train_loss", loss)
         return loss
 
@@ -330,6 +325,9 @@ class ProcessModel(pl.LightningModule):
         self.log("t_acc", testAcc, prog_bar=True)
         self.trainAccMetric.reset()
         confMat = self.trainConfMat.compute()
+        f1 = self.trainF1Score.compute()
+        self.log("t_f1", f1, prog_bar=True)
+
         # tn = confMat[0][0]
         # fp = confMat[0][1]
         allTp = []
@@ -345,13 +343,14 @@ class ProcessModel(pl.LightningModule):
         avgTp = torch.mean(torch.tensor(allTp))
         avgTn = torch.mean(torch.tensor(allTn))
 
-        self.log("t_tp", avgTp, prog_bar=True)
-        self.log("t_tn", avgTn, prog_bar=True)
+        self.log("t_tp", avgTp, prog_bar=False)
+        self.log("t_tn", avgTn, prog_bar=False)
 
         # self.log("train_fp", fp, prog_bar=False)
         # self.log("train_fn", fn, prog_bar=False)
 
         self.trainConfMat.reset()
+        self.trainF1Score.reset()
 
         return super().training_epoch_end(outputs)
 
@@ -368,7 +367,9 @@ class ProcessModel(pl.LightningModule):
         self.testConfMat.update(preds, targets.type(torch.int64))
         self.testPrecision.update(preds, targets.type(torch.int64))
         self.testRecall.update(preds, targets.type(torch.int64))
-        self.log("e_loss", loss, prog_bar=True)
+        self.testF1Score.update(preds, targets.type(torch.int64))
+
+        self.log("e_loss", loss, prog_bar=False)
 
         return preds, targets
 
@@ -376,16 +377,20 @@ class ProcessModel(pl.LightningModule):
         testAcc = self.testAccMetric.compute()
         testPrecision = self.testPrecision.compute()
         testRecall = self.testRecall.compute()
+        testF1 = self.testF1Score.compute()
         preds = torch.cat([x[0] for x in val_step_outputs])
         targets = torch.cat([x[1] for x in val_step_outputs])
 
         exactAcc = accuracy_score(targets.cpu().numpy(), preds.cpu().numpy())
-        hammingScore, _ = hamming_score(targets.cpu().numpy(), preds.cpu().numpy())
-        self.log("e_acc", testAcc, prog_bar=False)
-        self.log("precision", testPrecision, prog_bar=False)
-        self.log("recall", testRecall, prog_bar=False)
+        hammingLoss = hamming_loss(targets.cpu().numpy(), preds.cpu().numpy())
+        hammingScore = 1 - hammingLoss
+        self.log("e_acc", testAcc, prog_bar=True)
+        self.log("precision", testPrecision, prog_bar=True)
+        self.log("recall", testRecall, prog_bar=True)
+        self.log("f1", testF1, prog_bar=True)
+
         self.log("exact", exactAcc, prog_bar=False)
-        self.log("subset", hammingScore, prog_bar=True)
+        self.log("subset", hammingScore, prog_bar=False)
 
         confMat = self.testConfMat.compute()
         allTp = []
@@ -408,6 +413,7 @@ class ProcessModel(pl.LightningModule):
         self.testRecall.reset()
         self.testPrecision.reset()
         self.testAccMetric.reset()
+        self.testF1Score.reset()
 
         return super().validation_epoch_end(val_step_outputs)
 
@@ -447,16 +453,16 @@ def train_eval(
     )
     trainParams.currentPosWeight = posWeight
     checkpoint_callback = ModelCheckpoint(
-        monitor="subset",
+        monitor="e_acc",
         save_top_k=trainParams.saveTopNBest,
         mode="max",
-        filename="{subset:.2f}-{e_tp:.2f}--{e_tn:.2f}",
+        filename="{e_acc:.2f}-{e_tp:.2f}--{e_tn:.2f}",
     )
     model = create_model()
 
     trainProcessModel = ProcessModel(model, pos_weight=posWeight)
     trainer1 = pl.Trainer(
-        # accumulate_grad_batches=10,
+        # accumulate_grad_batches=5,
         default_root_dir=f"./outputs/{trainParams.localSaveDir}",
         max_epochs=trainParams.maxEpoch,
         accelerator="gpu",
@@ -477,7 +483,7 @@ def train_eval(
     trainer1.fit(
         trainProcessModel, train_dataloaders=trainLoader, val_dataloaders=valLoader
     )
-    batchPredDf = trainer1.predict(trainProcessModel, testLoader)
+    batchPredDf = trainer1.predict(trainProcessModel, valLoader)
     precision, recall, threshold = trainProcessModel.pr_curve.compute()
     precision = precision[:, :-1]
     recall = recall[:, :-1]
@@ -494,6 +500,7 @@ def train_eval(
         axis=1,
     )
     allPRByPart["view"] = trainParams.imgAngle
+    batchPredDf = trainer1.predict(trainProcessModel, testLoader)
 
     completePredDf = pd.concat(batchPredDf)
 
@@ -513,24 +520,6 @@ def train_eval(
     return completePredDf, trainProcessModel.logger.experiment_id, allPRByPart
 
 
-def BalanceSampling(srcDf, targetPart):
-    labelDistribDf = srcDf[targetPart].value_counts().reset_index()
-    smallestClassSize = labelDistribDf[targetPart].min()
-    srcDf2 = srcDf.groupby(targetPart).sample(n=smallestClassSize).reset_index()
-
-    return srcDf2
-
-
-def GetDataDir():
-    currPath = pathlib.Path(os.getcwd())
-    imgSrcDir = currPath / "data/train_test_img"
-    labelSrcDir = currPath / "data/train_test_labels"
-    assert os.path.isdir(imgSrcDir)
-    assert os.path.isdir(labelSrcDir)
-
-    return imgSrcDir, labelSrcDir
-
-
 def getAllPart():
     currPath = pathlib.Path(os.getcwd())
     allPartPath = currPath / "data/all_part.json"
@@ -538,10 +527,6 @@ def getAllPart():
     with open(allPartPath, "r") as f:
         allParts = json.load(f)
     return allParts
-
-
-def compute_pr(completePred: pd.DataFrame):
-    MultilabelPrecisionRecallCurve
 
 
 def store_pred(completePred: pd.DataFrame, expId: int):
@@ -555,27 +540,14 @@ def store_pred(completePred: pd.DataFrame, expId: int):
         print(f"Completed part {trainParams.imgAngle}")
 
 
-def GenLabelGroup(x):
-    rawNpArray = np.array2string(
-        x.values, precision=2, separator=",", suppress_small=True
-    )
-    return rawNpArray
-
-
-def CountLabelComb(srcDf, allTargetParts):
-    srcDf["label_combination"] = srcDf[allTargetParts].apply(GenLabelGroup, axis=1)
-    combDf = srcDf["label_combination"].value_counts().reset_index()
-    print(combDf)
-
-
 def get_view_filename():
     base = [
-        "rear_view_img_labels.csv",
-        "rear_view_left_img_labels.csv",
-        "rear_view_right_img_labels.csv",
-        "front_view_left_img_labels.csv",
-        "front_view_img_labels.csv",
-        "front_view_right_img_labels.csv",
+        "rear view_img_labels.csv",
+        "rear view left_img_labels.csv",
+        "rear view right_img_labels.csv",
+        "front view left_img_labels.csv",
+        "front view_img_labels.csv",
+        "front view right_img_labels.csv",
     ]
     remoteFilename = [f"{trainParams.vehicleType}_{x}" for x in base]
     return remoteFilename
@@ -583,86 +555,102 @@ def get_view_filename():
 
 def get_label_df(filename):
     # labelDf = wr.s3.read_csv(path=f"s3://imgs_labels_4/{filename}")
-    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/balance_labels"
-    labelDf = pd.read_csv(os.path.join(srcDir, filename)).sample(n=10e3)
-    return labelDf
+    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/balance_labels_high_resolutions"
+    labelDf = pd.read_csv(os.path.join(srcDir, filename))
+    testCaseId = pd.read_csv(
+        "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/test_set/test_case_id.csv"
+    )
+    testDf = labelDf[labelDf["CaseID"].isin(testCaseId["CaseID"].tolist())]
+    labelDf = labelDf[~labelDf["CaseID"].isin(testDf["CaseID"].tolist())]
+    assert set(labelDf["CaseID"].tolist()).isdisjoint(set(testDf["CaseID"].tolist()))
+    return labelDf, testDf
 
 
-def gen_dataset(viewFilename, notLabels):
-    labelDf: pd.DataFrame = get_label_df(viewFilename)
-    print(labelDf)
+def gen_dataset(viewFilename):
+    labelDf, testDf = get_label_df(viewFilename)
     allTargetParts = [x for x in labelDf.filter(regex="vision_*").columns]
     trainParams.runName = viewFilename
     trainParams.targetPart = allTargetParts
     trainParams.imgAngle = viewFilename.replace("_img_labels.csv", "")
-    mulitlearnStratify = MultilabelStratifiedKFold(
-        n_splits=trainParams.kFoldSplit, shuffle=True
+
+    # y = labelDf[allTargetParts]
+    # X = labelDf["filename"]
+    # if len(labelDf) < 15e3:
+    #     testSetSize = 3000
+    #     trainSetSize = 5000
+    # else:
+    #     testSetSize = 3000
+    #     trainSetSize = 8000
+    testSetSize = 5000
+    # trainSetSize = 10000
+    evalDf = labelDf.sample(frac=1).head(n=testSetSize)
+    trainDf = (
+        labelDf[~labelDf["CaseID"].isin(evalDf["CaseID"].tolist())]
+        .sample(frac=1)
+        .groupby(["model"])
+        .head(100)
     )
-    y = labelDf[allTargetParts]
-    X = labelDf["filename"]
-    return mulitlearnStratify, X, y, allTargetParts
+    print(trainDf["model"].value_counts().reset_index())
+    print(len(trainDf))
+    trainDf = trainDf[allTargetParts + ["filename"]]
+    evalDf = evalDf[allTargetParts + ["filename"]]
+    evalDf.drop_duplicates(subset="filename", inplace=True)
+    testDf = testDf[allTargetParts + ["filename"]]
+    testDf.drop_duplicates(subset="filename", inplace=True)
+
+    return trainDf, evalDf, testDf
 
 
-def get_pos_weight(trial, allColName, viewFilename) -> List[float]:
-    if trial:
-        posWeight = [
-            trial.suggest_float(f"pos_weight_{allColName[x]}", 0.05, 20, log=True)
-            for x in range(len(allColName))
-        ]
-    else:
-        study_name = viewFilename.split(".")[0]
-        baseDir = (
-            "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/hyperparams"
-        )
-        dbFile = f"sqlite:///{baseDir}/{trainParams.vehicleType}_{study_name}.db"
-        study = optuna.load_study(study_name=study_name, storage=dbFile)
-        df: pd.DataFrame = study.trials_dataframe(
-            attrs=("number", "value", "params", "state")
-        )
-        majorMetricsInOrder = ["values_1", "values_2", "values_0", "values_3"]
-        df.sort_values(by=majorMetricsInOrder, ascending=False, inplace=True)
-        print(df[majorMetricsInOrder])
-        colData = [f"params_pos_weight_{x}" for x in allColName]
-        print(df[colData])
-        posWeight = df[colData].head(1).values.tolist()[0]
-        return posWeight
+# def get_pos_weight(trial, allColName, viewFilename) -> List[float]:
+#     if trial:
+#         posWeight = [
+#             trial.suggest_float(f"pos_weight_{allColName[x]}", 0.05, 20, log=True)
+#             for x in range(len(allColName))
+#         ]
+#     else:
+#         study_name = viewFilename.split(".")[0]
+#         baseDir = (
+#             "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/hyperparams"
+#         )
+#         dbFile = f"sqlite:///{baseDir}/{trainParams.vehicleType}_{study_name}.db"
+#         study = optuna.load_study(study_name=study_name, storage=dbFile)
+#         df: pd.DataFrame = study.trials_dataframe(
+#             attrs=("number", "value", "params", "state")
+#         )
+#         majorMetricsInOrder = ["values_1", "values_2", "values_0", "values_3"]
+#         df.sort_values(by=majorMetricsInOrder, ascending=False, inplace=True)
+#         print(df[majorMetricsInOrder])
+#         colData = [f"params_pos_weight_{x}" for x in allColName]
+#         print(df[colData])
+#         posWeight = df[colData].head(1).values.tolist()[0]
+#         return posWeight
 
 
 def select_best_threshold(df: pd.DataFrame):
     df.sort_values(by="f1", ascending=False, inplace=True)
     allBestThreshold = df.groupby("part").head(1)
+    # allBestThreshold["threshold"] = 0.5
     return allBestThreshold
 
 
 def fit(
     viewFilename,
-    trial=None,
 ):
-    notLabels = ["CaseID", "view", "filename", "Unnamed: 0"]
 
-    mulitlearnStratify, X, y, allTargetParts = gen_dataset(viewFilename, notLabels)
-    allColName = y.columns.tolist()
+    trainDf, evalDf, testDf = gen_dataset(viewFilename)
+    allColName = trainDf.columns.tolist()
     trainParams.currentColName = allColName
-    # posWeight = get_pos_weight(trial, allColName, viewFilename)
-    # print(X.dtypes)
-    # print(y.dtypes)
 
     viewCompletePredDf = pd.DataFrame()
     viewCompletePRThreshold = pd.DataFrame()
 
-    for kfoldId, (train_index, test_index) in enumerate(mulitlearnStratify.split(X, y)):
-        X_train, X_test = X[train_index], X[test_index]
-        y_train, y_test = y.loc[train_index], y.loc[test_index]
-        y_train["filename"] = X_train
-        y_test["filename"] = X_test
-
-        trainLoader, valLoader, testLoader = get_dataloader(y_train, y_test)
-        posWeight = trainLoader.dataset.allPosWeight
-        predDf, expId, allPRByPart = train_eval(
-            trainLoader, valLoader, testLoader, posWeight, kfoldId + 1
-        )
-        viewCompletePRThreshold = pd.concat([viewCompletePRThreshold, allPRByPart])
-        viewCompletePredDf = pd.concat([viewCompletePredDf, predDf])
+    trainLoader, valLoader, testLoader = get_dataloader(trainDf, evalDf, testDf)
+    posWeight = trainLoader.dataset.allPosWeight
+    predDf, expId, allPRByPart = train_eval(
+        trainLoader, valLoader, testLoader, posWeight, 1
+    )
+    viewCompletePRThreshold = pd.concat([viewCompletePRThreshold, allPRByPart])
+    viewCompletePredDf = pd.concat([viewCompletePredDf, predDf])
     bestThresholdDf = select_best_threshold(viewCompletePRThreshold)
     viewCompletePredDf = viewCompletePredDf.merge(
         bestThresholdDf, left_on="parts", right_on="part"
@@ -687,40 +675,41 @@ def train_all_views():
         fit(viewFilename)
 
 
-def tune(targetFilename):
-    study_name = targetFilename.split(".")[0]  # Unique identifier of the study.
-    storage_name = f"sqlite:////home/alextay96/Desktop/new_workspace/DLDataPipeline/data/hyperparams/{trainParams.vehicleType}_{study_name}.db".format(
-        study_name
-    )
-    print(f"Study name : {storage_name}")
-    study = optuna.create_study(
-        study_name=study_name,
-        directions=[
-            "maximize",
-            "maximize",
-            "maximize",
-            "maximize",
-            "maximize",
-        ],
-        storage=storage_name,
-        load_if_exists=True,
-    )
+# def tune(targetFilename):
+#     study_name = targetFilename.split(".")[0]  # Unique identifier of the study.
+#     storage_name = f"sqlite:////home/alextay96/Desktop/new_workspace/DLDataPipeline/data/hyperparams/{trainParams.vehicleType}_{study_name}.db".format(
+#         study_name
+#     )
+#     print(f"Study name : {storage_name}")
+#     study = optuna.create_study(
+#         study_name=study_name,
+#         directions=[
+#             "maximize",
+#             "maximize",
+#             "maximize",
+#             "maximize",
+#             "maximize",
+#         ],
+#         storage=storage_name,
+#         load_if_exists=True,
+#     )
 
-    def func2(trial):
-        return fit(targetFilename, trial)
+#     def func2(trial):
+#         return fit(targetFilename, trial)
 
-    study.optimize(func2, timeout=trainParams.tuningTimeout, show_progress_bar=True)
+#     study.optimize(func2, timeout=trainParams.tuningTimeout, show_progress_bar=True)
 
 
-def tune_all_view():
-    allViews = get_view_filename()
-    for viewFilename in tqdm(allViews, desc="view"):
-        viewName = viewFilename
-        tune(viewFilename)
+# def tune_all_view():
+#     allViews = get_view_filename()
+#     for viewFilename in tqdm(allViews, desc="view"):
+#         viewName = viewFilename
+#         tune(viewFilename)
 
 
 if __name__ == "__main__":
     allVehicleType = ["Saloon - 4 Dr", "Hatchback - 5 Dr", "SUV - 5 Dr"]
+    # allVehicleType = ["SUV - 5 Dr"]
     for vehicleType in allVehicleType:
         trainParams.vehicleType = vehicleType
         train_all_views()

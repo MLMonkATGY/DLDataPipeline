@@ -11,13 +11,14 @@ import yaml
 from pprint import pprint
 from src.clean.aum.dataset import PredictionImageDataset
 
-from src.clean.aum.train import ProcessModel
+from src.clean.aum.train import ProcessModel, create_model
 import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 import torch
 from torch.cuda.amp import autocast
 from torch.utils.data import DataLoader2
 from loguru import logger
+from torchmetrics import Accuracy, ConfusionMatrix
 
 # from torchdata.datapipes.iter import IterableWrapper
 
@@ -36,7 +37,7 @@ def transport_worker(df: pd.DataFrame, sinkDir: str):
 
 
 def get_src_file():
-    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum"
+    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution"
     downloadedCsv = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/downloaded_case_id.json"
 
     search = f"{srcDir}/**/pred_cleaned_*.csv"
@@ -119,7 +120,7 @@ def download_files():
 
 
 def load_models():
-    search = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_models/lightning_logs"
+    search = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs"
     allHParams = glob.glob(f"{search}/**/*.yaml", recursive=True)
     allModel = []
     for hparamsFile in tqdm(allHParams):
@@ -132,7 +133,7 @@ def load_models():
                 modelPath = glob.glob(f"{modelDir}/**.ckpt")
                 allModel.append({"model_path": modelPath, "model_name": modelName})
                 print(allModel)
-    with open("./model_dataset.json", "w") as f:
+    with open("./model_dataset_high_resolutions.json", "w") as f:
         json.dump(allModel, f)
 
 
@@ -144,16 +145,21 @@ def predict_part(model, dataloader):
     allPredInfo = []
     part = dataloader.dataset.targetName
     view = dataloader.dataset.targetView
-
+    accMetrics = Accuracy(task="multiclass", num_classes=2).to(device)
+    confMatMetric = ConfusionMatrix(
+        task="multiclass", num_classes=2, normalize="true"
+    ).to(device)
     with torch.no_grad():
-        for batch in tqdm(dataloader, desc="predict"):
+        for batchId, batch in enumerate(tqdm(dataloader, desc="predict")):
             imgs = batch["img"].to(device)
             files = batch["filename"]
             vehicleType = batch["vehicleType"]
             vehicleModel = batch["model"]
             logit = model(imgs)
             preds = torch.argmax(logit, dim=1)
-            labels = batch["target"].type(torch.uint8)
+            labels = batch["target"].type(torch.uint8).to(device)
+            accMetrics.update(preds, labels)
+            confMatMetric.update(preds, labels)
             predProbs = torch.softmax(logit, dim=1)
             for p, f, gt, probs, vType, vModel in zip(
                 preds, files, labels, predProbs, vehicleType, vehicleModel
@@ -164,6 +170,7 @@ def predict_part(model, dataloader):
                     "gt": gt.tolist(),
                     "probs_0": softmaxProbs[0],
                     "probs_1": softmaxProbs[1],
+                    "pred_probs": softmaxProbs[p],
                     "filename": f,
                     "part": part,
                     "view": view,
@@ -171,12 +178,18 @@ def predict_part(model, dataloader):
                     "model": vModel,
                 }
                 allPredInfo.append(info)
+            if batchId % 100 == 0:
+                confMat = confMatMetric.compute()
+                logger.success(f"TNR : {confMat[0][0]}")
+                logger.success(f"TPR : {confMat[1][1]}")
+                logger.success(f"ACC : {accMetrics.compute()}")
+
         predDf = pd.json_normalize(allPredInfo)
     return predDf
 
 
 def predict_all():
-    with open("./model_dataset.json", "r") as f:
+    with open("./model_dataset_high_resolutions.json", "r") as f:
         allModelAnn = json.load(f)
     filesDf = pd.read_parquet(
         "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/local/local_files_metadata.parquet"
@@ -184,24 +197,35 @@ def predict_all():
 
     evalTransform = A.Compose(
         [
-            A.LongestMaxSize(300),
+            A.LongestMaxSize(640),
             A.PadIfNeeded(
-                min_height=300,
-                min_width=300,
+                min_height=640,
+                min_width=640,
                 border_mode=0,
             ),
             A.Normalize(),
             ToTensorV2(),
         ]
     )
-    labelDf = wr.s3.read_parquet(path=f"s3://multilabel_df/", dataset=True)
+    labelDf = wr.s3.read_parquet(path=f"s3://multilabel_df_lvl_3/", dataset=True)
     print(labelDf.columns)
     img_dir = (
         "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/imgs"
     )
-    outputDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/predict"
+    outputDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/predict_high_resolutions"
+    os.makedirs(outputDir, exist_ok=True)
     for i in tqdm(allModelAnn, desc="part_view"):
-        model = ProcessModel.load_from_checkpoint(i["model_path"][0])
+        model = create_model()
+
+        # model = ProcessModel(model, "", 1e-3, False)
+        model = ProcessModel.load_from_checkpoint(
+            # part, lr, isFiltered
+            checkpoint_path=i["model_path"][0],
+            model=model,
+            part="",
+            lr=1e-3,
+            isFiltered=False,
+        )
         targetView = i["model_name"].replace("_img_labels", "").split("_")[-1]
         targetPart = (
             i["model_name"].replace("_img_labels", "").replace(targetView, "")[:-1]
@@ -211,15 +235,45 @@ def predict_all():
         partLabelDf = labelDf[
             labelDf["CaseID"].isin(filesDf["CaseID"].unique().tolist())
         ][[targetPart, "CaseID", "Vehicle_Type", "Model"]]
-        targetFilesDf = targetFilesDf.merge(partLabelDf, on="CaseID")
-        # print(targetFilesDf.columns)
+        targetFilesDf: pd.DataFrame = targetFilesDf.merge(partLabelDf, on="CaseID")
+        targetFilesDf.sort_values(by="CaseID", ascending=True, inplace=True)
+        print(targetFilesDf.columns)
+        # targetFilesDf = targetFilesDf.groupby(
+        #     ["Vehicle_Type", "Model", targetPart]
+        # ).head(20)
+        # modelTypeLabelDf = (
+        #     targetFilesDf.groupby(["Model"])["CaseID"]
+        #     .count()
+        #     .reset_index()
+        #     .rename(columns={"CaseID": "count"})
+        #     .sort_values(by="count", ascending=False)
+        #     .head(200)
+        # )
+        # targetFilesDf = (
+        #     targetFilesDf[
+        #         targetFilesDf["Model"].isin(modelTypeLabelDf["Model"].unique().tolist())
+        #     ]
+        #     .sort_values(by="CaseID", ascending=True)
+        #     .groupby([targetPart, "Model"])
+        #     .head(100)
+        # )
+        print(targetFilesDf.groupby(["Vehicle_Type", targetPart]).count().reset_index())
+        # balanceTempDf = (
+        #     targetFilesDf.groupby(["Vehicle_Type", "Model", targetPart])
+        #     .count()
+        #     .reset_index()
+        #     .rename(columns={"CaseID": "count"})
+        #     .sort_values(by="count", ascending=False)
+        # )
+        # print(balanceTempDf.tail(30))
+        logger.success(f"Pred Set Size {len(targetFilesDf)}")
         ds = PredictionImageDataset(
             targetFilesDf, img_dir, targetPart, targetView, evalTransform
         )
         evalLoader = DataLoader2(
             ds,
             shuffle=False,
-            batch_size=150,
+            batch_size=60,
             num_workers=10,
         )
         predDf = predict_part(model, evalLoader)
@@ -228,8 +282,9 @@ def predict_all():
 
 
 def build_multi_view_multilabel_df():
-    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/predict"
-    predLabelOutDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/pred_labels"
+    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/predict_high_resolutions"
+    predLabelOutDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/pred_labels_high_resolutions"
+    os.makedirs(predLabelOutDir, exist_ok=True)
     allPredFiles = glob.glob(f"{srcDir}/*.parquet", recursive=True)
     allDf = []
     for i in allPredFiles:
@@ -254,6 +309,7 @@ def build_multi_view_multilabel_df():
         ]
 
         relatedParts = sorted(viewVehicleTypePredDf["part"].unique().tolist())
+        print(viewVehicleTypePredDf.columns)
         allOutputDfByPart = []
         for part in relatedParts:
             outputDf = pd.DataFrame()
@@ -267,10 +323,14 @@ def build_multi_view_multilabel_df():
             outputDf["CaseID"] = partPredDf["CaseID"].values
             outputDf["filename"] = partPredDf["filename"].values
             outputDf["view"] = partPredDf["view"].values
+            outputDf["model"] = partPredDf["model"].values
+
             allOutputDfByPart.append(outputDf)
         multilabelDf: pd.DataFrame = allOutputDfByPart[0]
         for df in allOutputDfByPart[1:]:
-            multilabelDf = multilabelDf.merge(df, on=["filename", "CaseID", "view"])
+            multilabelDf = multilabelDf.merge(
+                df, on=["filename", "CaseID", "view", "model"]
+            )
 
         print(multilabelDf.columns)
         outCsv = f"{predLabelOutDir}/{vehicleType}_{view.lower()}_img_labels.csv"
@@ -278,8 +338,9 @@ def build_multi_view_multilabel_df():
 
 
 def sample_label_df():
-    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/pred_labels"
-    outDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/balance_labels"
+    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/pred_labels_high_resolutions"
+    outDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/balance_labels_high_resolutions"
+    os.makedirs(outDir, exist_ok=True)
     allPredLabelCsv = glob.glob(f"{srcDir}/**.csv", recursive=True)
     for dfCsv in allPredLabelCsv:
         filename = dfCsv.split("/")[-1]
@@ -313,8 +374,9 @@ def sample_label_df():
 
 
 # get_src_file()
-# load_models()
 # download_files()
+
+# load_models()
 # predict_all()
 build_multi_view_multilabel_df()
 sample_label_df()

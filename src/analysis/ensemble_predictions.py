@@ -33,12 +33,12 @@ warnings.filterwarnings("once")
 pd.options.mode.chained_assignment = None 
 def get_view_names():
     return [
-        "front_view_left",
-        "front_view",
-        "front_view_right",
-        "rear_view",
-        "rear_view_left",
-        "rear_view_right",
+        "front view left",
+        "front view",
+        "front view right",
+        "rear view",
+        "rear view left",
+        "rear view right",
     ]
 
 
@@ -143,7 +143,12 @@ def ensemble_pred(completeDf: pd.DataFrame, labelDf:pd.DataFrame, vehicleType:st
                 # maxConfId = avgConfDf["pred_diff"].idxmax()
 
                 # predDmgStatus = int(avgConfDf.iloc[maxConfId]["pred_threshold"])
-                predDmgStatus = 0
+                avgProbs = np.mean(partPreds["conf"].tolist())
+                if avgProbs >= 0.5:
+                    predDmgStatus = 1
+                else:
+                    predDmgStatus = 0
+
             else:
                 predDmgStatus = rankPreds[0][0]
             partDmgPred[f"gt_{part}"].append(gtLabel)
@@ -232,7 +237,7 @@ def eval_by_parts(allParts, partPerfDf):
 
 
 if __name__ == "__main__":
-    expId = 116
+    expId = 132
     allVehicleType = ["Saloon - 4 Dr", "Hatchback - 5 Dr", "SUV - 5 Dr"]
     for vehicleType in allVehicleType:
         get_cv_pred(expId, vehicleType)

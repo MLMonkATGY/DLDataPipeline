@@ -1,0 +1,254 @@
+[
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_37/checkpoints/e_acc=0.83-e_tp=0.80--e_tn=0.86.ckpt"
+        ],
+        "model_name": "bumper_rear_Rear View Left_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_27/checkpoints/e_acc=0.86-e_tp=0.83--e_tn=0.88.ckpt"
+        ],
+        "model_name": "headlamp_lh_Front View_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_15/checkpoints/e_acc=0.86-e_tp=0.73--e_tn=0.99.ckpt"
+        ],
+        "model_name": "engine_Front View Left_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_21/checkpoints/e_acc=0.89-e_tp=0.86--e_tn=0.92.ckpt"
+        ],
+        "model_name": "grille_Front View Right_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_53/checkpoints/e_acc=0.93-e_tp=0.90--e_tn=0.96.ckpt"
+        ],
+        "model_name": "tail_lamp_lh_Rear View_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_63/checkpoints/e_acc=0.96-e_tp=0.95--e_tn=0.98.ckpt"
+        ],
+        "model_name": "windscreen_front_Front View Right_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_69/checkpoints/e_acc=0.95-e_tp=0.93--e_tn=0.98.ckpt"
+        ],
+        "model_name": "rear_compartment_Rear View Left_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_7/checkpoints/e_acc=0.86-e_tp=0.74--e_tn=0.99.ckpt"
+        ],
+        "model_name": "bumper_front_Front View_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_57/checkpoints/e_acc=0.95-e_tp=0.92--e_tn=0.97.ckpt"
+        ],
+        "model_name": "tail_lamp_rh_Rear View Right_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_65/checkpoints/e_acc=0.91-e_tp=0.90--e_tn=0.92.ckpt"
+        ],
+        "model_name": "rear_compartment_Rear View_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_81/checkpoints/e_acc=0.93-e_tp=0.85--e_tn=1.00.ckpt"
+        ],
+        "model_name": "windscreen_rear_Rear View Right_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_59/checkpoints/e_acc=0.90-e_tp=0.88--e_tn=0.92.ckpt"
+        ],
+        "model_name": "windscreen_front_Front View_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_55/checkpoints/e_acc=0.89-e_tp=0.87--e_tn=0.92.ckpt"
+        ],
+        "model_name": "tail_lamp_rh_Rear View_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_17/checkpoints/e_acc=0.96-e_tp=0.99--e_tn=0.94.ckpt"
+        ],
+        "model_name": "engine_Front View_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_49/checkpoints/e_acc=0.96-e_tp=0.97--e_tn=0.94.ckpt"
+        ],
+        "model_name": "rear_quarter_lh_Rear View Left_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_19/checkpoints/e_acc=0.87-e_tp=0.79--e_tn=0.96.ckpt"
+        ],
+        "model_name": "grille_Front View_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_11/checkpoints/e_acc=0.92-e_tp=0.86--e_tn=0.98.ckpt"
+        ],
+        "model_name": "bumper_front_Front View Right_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_1/checkpoints/e_acc=0.94-e_tp=0.92--e_tn=0.96.ckpt"
+        ],
+        "model_name": "bonnet_Front View Right_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_51/checkpoints/e_acc=0.93-e_tp=0.88--e_tn=0.99.ckpt"
+        ],
+        "model_name": "tail_lamp_lh_Rear View Left_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_13/checkpoints/e_acc=0.93-e_tp=0.90--e_tn=0.95.ckpt"
+        ],
+        "model_name": "engine_Front View Right_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_29/checkpoints/e_acc=0.90-e_tp=0.92--e_tn=0.89.ckpt"
+        ],
+        "model_name": "headlamp_rh_Front View Right_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_39/checkpoints/e_acc=0.91-e_tp=0.90--e_tn=0.91.ckpt"
+        ],
+        "model_name": "front_panel_Front View_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_41/checkpoints/e_acc=0.91-e_tp=0.98--e_tn=0.85.ckpt"
+        ],
+        "model_name": "front_panel_Front View Left_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_75/checkpoints/e_acc=0.90-e_tp=0.86--e_tn=0.94.ckpt"
+        ],
+        "model_name": "rear_panel_Rear View_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_43/checkpoints/e_acc=0.91-e_tp=0.88--e_tn=0.94.ckpt"
+        ],
+        "model_name": "front_panel_Front View Right_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_5/checkpoints/e_acc=0.94-e_tp=0.92--e_tn=0.96.ckpt"
+        ],
+        "model_name": "bonnet_Front View Left_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_3/checkpoints/e_acc=0.91-e_tp=0.87--e_tn=0.96.ckpt"
+        ],
+        "model_name": "bonnet_Front View_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_25/checkpoints/e_acc=0.90-e_tp=0.95--e_tn=0.85.ckpt"
+        ],
+        "model_name": "headlamp_lh_Front View Left_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_35/checkpoints/e_acc=0.80-e_tp=0.71--e_tn=0.89.ckpt"
+        ],
+        "model_name": "bumper_rear_Rear View_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_73/checkpoints/e_acc=0.89-e_tp=0.80--e_tn=0.98.ckpt"
+        ],
+        "model_name": "rear_panel_Rear View Left_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_23/checkpoints/e_acc=0.86-e_tp=0.89--e_tn=0.82.ckpt"
+        ],
+        "model_name": "grille_Front View Left_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_45/checkpoints/e_acc=0.95-e_tp=0.91--e_tn=1.00.ckpt"
+        ],
+        "model_name": "fender_front_lh_Front View Left_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_31/checkpoints/e_acc=0.87-e_tp=0.95--e_tn=0.79.ckpt"
+        ],
+        "model_name": "headlamp_rh_Front View_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_9/checkpoints/e_acc=0.90-e_tp=0.94--e_tn=0.87.ckpt"
+        ],
+        "model_name": "bumper_front_Front View Left_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_33/checkpoints/e_acc=0.82-e_tp=0.95--e_tn=0.68.ckpt"
+        ],
+        "model_name": "bumper_rear_Rear View Right_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_71/checkpoints/e_acc=0.93-e_tp=0.93--e_tn=0.93.ckpt"
+        ],
+        "model_name": "rear_panel_Rear View Right_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_67/checkpoints/e_acc=0.95-e_tp=0.93--e_tn=0.98.ckpt"
+        ],
+        "model_name": "rear_compartment_Rear View Right_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_77/checkpoints/e_acc=0.98-e_tp=0.96--e_tn=1.00.ckpt"
+        ],
+        "model_name": "rear_quarter_rh_Rear View Right_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_79/checkpoints/e_acc=0.93-e_tp=0.93--e_tn=0.94.ckpt"
+        ],
+        "model_name": "windscreen_rear_Rear View Left_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_83/checkpoints/e_acc=0.89-e_tp=0.88--e_tn=0.91.ckpt"
+        ],
+        "model_name": "windscreen_rear_Rear View_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_61/checkpoints/e_acc=0.92-e_tp=0.85--e_tn=0.99.ckpt"
+        ],
+        "model_name": "windscreen_front_Front View Left_img_labels"
+    },
+    {
+        "model_path": [
+            "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs/version_47/checkpoints/e_acc=0.96-e_tp=0.95--e_tn=0.97.ckpt"
+        ],
+        "model_name": "fender_front_rh_Front View Right_img_labels"
+    }
+]
