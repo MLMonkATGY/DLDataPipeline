@@ -1,0 +1,1 @@
+damage,not_damage,reject

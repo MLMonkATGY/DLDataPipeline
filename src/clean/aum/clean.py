@@ -80,16 +80,19 @@ def merge_aum(predDf: pd.DataFrame, aumDf: pd.DataFrame):
 
 
 def select_quality_samples(predDf: pd.DataFrame):
-    aumThreshold = predDf["aum"].quantile(0.3)
-    if aumThreshold < 0.4:
-        aumThreshold = 0.4
+    aumThresholdLower = predDf["aum"].quantile(0.6)
+    aumThresholdHigher = predDf["aum"].quantile(0.8)
+
     oodScoreThreshold = predDf["ood_score"].quantile(0.1)
-    print(f"OOD threshold : {oodScoreThreshold}")
+    # print(f"OOD threshold : {oodScoreThreshold}")
     trainDf = predDf.dropna(subset="aum")
     selectedDf = trainDf[
-        (trainDf["aum"] >= aumThreshold) & (trainDf["ood_score"] >= oodScoreThreshold)
+        (trainDf["aum"] >= aumThresholdLower)
+        # & (trainDf["ood_score"] >= oodScoreThreshold)
+        # & (trainDf["aum"] <= aumThresholdHigher)
     ]
     selectedRatio = len(selectedDf) / len(trainDf)
+
     print(f"Selected Data :{selectedRatio}")
     print(selectedDf["gt"].value_counts().reset_index())
     print(selectedDf["pred"].value_counts().reset_index())

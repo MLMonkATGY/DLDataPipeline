@@ -237,7 +237,7 @@ def eval_by_parts(allParts, partPerfDf):
 
 
 if __name__ == "__main__":
-    expId = 132
+    expId = 134
     allVehicleType = ["Saloon - 4 Dr", "Hatchback - 5 Dr", "SUV - 5 Dr"]
     for vehicleType in allVehicleType:
         get_cv_pred(expId, vehicleType)

@@ -70,6 +70,7 @@ from iterstrat.ml_stratifiers import (
 )
 import awswrangler as wr
 import optuna
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
 
@@ -182,6 +183,14 @@ def create_model():
     model.classifier[1] = torch.nn.Linear(
         in_features=num_ftrs, out_features=len(trainParams.targetPart)
     )
+    # model = torchvision.models.resnet50(
+    #     weights=torchvision.models.ResNet50_Weights.DEFAULT
+    # )
+
+    # num_ftrs = model.fc.in_features
+    # model.fc = torch.nn.Linear(
+    #     in_features=num_ftrs, out_features=len(trainParams.targetPart)
+    # )
 
     return model
 
@@ -195,15 +204,16 @@ def get_dataloader(y_train, y_eval, y_test):
                 min_width=trainParams.imgSize,
                 border_mode=0,
             ),
-            A.ColorJitter(p=0.3),
-            A.RandomGridShuffle(p=0.3),
+            A.ColorJitter(p=0.5, brightness=0.8, saturation=0.8, hue=0.5, contrast=0.8),
+            # A.Rotate(limit=180, border_mode=0, p=0.5),
+            A.RandomGridShuffle(grid=(3, 3), p=0.5),
             # A.Rotate(border_mode=0, p=0.2),
             # A.GaussianBlur(blur_limit=(1, 5), p=0.3),
             # A.CoarseDropout(max_height=16, max_width=16, p=0.2),
             # A.GaussianBlur(blur_limit=(1, 5), p=0.2),
             # A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
             # A.GridDistortion(border_mode=0, p=0.2),
-            A.Normalize(),
+            A.Normalize(mean=[0, 0, 0], std=[1, 1, 1]),
             ToTensorV2(),
         ]
     )
@@ -215,7 +225,7 @@ def get_dataloader(y_train, y_eval, y_test):
                 min_width=trainParams.imgSize,
                 border_mode=0,
             ),
-            A.Normalize(),
+            A.Normalize(mean=[0, 0, 0], std=[1, 1, 1]),
             ToTensorV2(),
         ]
     )
@@ -233,14 +243,14 @@ def get_dataloader(y_train, y_eval, y_test):
     evalLoader = DataLoader2(
         evalDs,
         shuffle=False,
-        batch_size=trainParams.trainBatchSize,
+        batch_size=trainParams.trainBatchSize * 2,
         num_workers=trainParams.trainCPUWorker,
     )
     testDs = MultilabelDataset(y_test, evalTransform)
     testLoader = DataLoader2(
         testDs,
         shuffle=False,
-        batch_size=trainParams.trainBatchSize,
+        batch_size=trainParams.trainBatchSize * 2,
         num_workers=trainParams.trainCPUWorker,
     )
     assert set(evalDs.df["filename"].unique().tolist()).isdisjoint(
@@ -458,11 +468,19 @@ def train_eval(
         mode="max",
         filename="{e_acc:.2f}-{e_tp:.2f}--{e_tn:.2f}",
     )
+    early_stop_callback = EarlyStopping(
+        monitor="e_acc",
+        stopping_threshold=0.95,
+        patience=5,
+        verbose=True,
+        mode="max",
+        min_delta=0.01,
+    )
     model = create_model()
 
     trainProcessModel = ProcessModel(model, pos_weight=posWeight)
     trainer1 = pl.Trainer(
-        # accumulate_grad_batches=5,
+        accumulate_grad_batches=5,
         default_root_dir=f"./outputs/{trainParams.localSaveDir}",
         max_epochs=trainParams.maxEpoch,
         accelerator="gpu",
@@ -472,8 +490,8 @@ def train_eval(
         benchmark=True,
         precision=trainParams.trainingPrecision,
         logger=logger,
-        log_every_n_steps=30,
-        callbacks=[checkpoint_callback],
+        log_every_n_steps=50,
+        callbacks=[checkpoint_callback, early_stop_callback],
         detect_anomaly=False,
         # limit_train_batches=1,
         # limit_val_batches=5,
@@ -555,7 +573,7 @@ def get_view_filename():
 
 def get_label_df(filename):
     # labelDf = wr.s3.read_csv(path=f"s3://imgs_labels_4/{filename}")
-    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/balance_labels_high_resolutions"
+    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/balance_multilabel_aum_v2"
     labelDf = pd.read_csv(os.path.join(srcDir, filename))
     testCaseId = pd.read_csv(
         "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/test_set/test_case_id.csv"
@@ -588,8 +606,8 @@ def gen_dataset(viewFilename):
         labelDf[~labelDf["CaseID"].isin(evalDf["CaseID"].tolist())]
         .sample(frac=1)
         .groupby(["model"])
-        .head(100)
-    )
+        .head(70)
+    ).head(3000)
     print(trainDf["model"].value_counts().reset_index())
     print(len(trainDf))
     trainDf = trainDf[allTargetParts + ["filename"]]
@@ -629,7 +647,7 @@ def gen_dataset(viewFilename):
 def select_best_threshold(df: pd.DataFrame):
     df.sort_values(by="f1", ascending=False, inplace=True)
     allBestThreshold = df.groupby("part").head(1)
-    # allBestThreshold["threshold"] = 0.5
+    allBestThreshold["threshold"] = 0.5
     return allBestThreshold
 
 
@@ -709,7 +727,7 @@ def train_all_views():
 
 if __name__ == "__main__":
     allVehicleType = ["Saloon - 4 Dr", "Hatchback - 5 Dr", "SUV - 5 Dr"]
-    # allVehicleType = ["SUV - 5 Dr"]
+    # allVehicleType = ["Hatchback - 5 Dr"]
     for vehicleType in allVehicleType:
         trainParams.vehicleType = vehicleType
         train_all_views()

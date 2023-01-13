@@ -57,8 +57,7 @@ import itertools
 from cleanlab.outlier import OutOfDistribution
 import glob
 import awswrangler as wr
-
-wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 
 class ProcessModel(pl.LightningModule):
@@ -72,10 +71,10 @@ class ProcessModel(pl.LightningModule):
         self.learning_rate = lr
         self.part = part
         if isFiltered:
-            self.aum_dir = f"data/build_dataset/aum_high_resolution/{part}_clean"
+            self.aum_dir = f"data/build_dataset/aum_v2/{part}_clean"
 
         else:
-            self.aum_dir = f"data/build_dataset/aum_high_resolution/{part}"
+            self.aum_dir = f"data/build_dataset/aum_v2/{part}"
         self.save_hyperparameters(ignore="model")
         self.model = model
 
@@ -98,7 +97,12 @@ class ProcessModel(pl.LightningModule):
             num_classes=2,
         ).to(self.device)
         self.testRecall = Recall(task="multiclass", num_classes=2).to(self.device)
-        self.criterion = torch.nn.CrossEntropyLoss()
+        # if isFiltered:
+        #     self.clsWeight = torch.tensor([1.0, 2.0])
+        # else:
+        self.clsWeight = torch.tensor([1.0, 1.0])
+
+        self.criterion = torch.nn.CrossEntropyLoss(weight=self.clsWeight)
         self.pr_curve = MulticlassPrecisionRecallCurve(num_classes=2, thresholds=11)
 
     def configure_optimizers(self):
@@ -107,7 +111,11 @@ class ProcessModel(pl.LightningModule):
             return torch.optim.Adam(self.parameters(), self.learning_rate)
         else:
             print("Using SGD optimizer")
-            return torch.optim.SGD(self.parameters(), self.learning_rate)
+            return torch.optim.SGD(
+                self.parameters(),
+                self.learning_rate,
+                weight_decay=1e-3,
+            )
 
     def forward(self, imgs):
         logit = self.model(imgs)
@@ -219,18 +227,35 @@ class ProcessModel(pl.LightningModule):
         return predDf
 
 
-def create_model():
+def create_model(isFiltered):
 
     # load Faster RCNN pre-trained model
+    # model = torchvision.models.resnet34(
+    #     weights=torchvision.models.ResNet34_Weights.DEFAULT
+    # )
 
-    model = torchvision.models.efficientnet_b0(
-        weights=torchvision.models.EfficientNet_B0_Weights.DEFAULT
-    )
+    # num_ftrs = model.fc.in_features
+    # model.fc = torch.nn.Linear(in_features=num_ftrs, out_features=2)
 
-    num_ftrs = model.classifier[1].in_features
-    model.classifier[1] = torch.nn.Linear(in_features=num_ftrs, out_features=2)
+    # return model
+    if isFiltered is False:
+        model = torchvision.models.resnet34(
+            weights=torchvision.models.ResNet34_Weights.DEFAULT
+        )
 
-    return model
+        num_ftrs = model.fc.in_features
+        model.fc = torch.nn.Linear(in_features=num_ftrs, out_features=2)
+
+        return model
+    else:
+        model = torchvision.models.efficientnet_b1(
+            weights=torchvision.models.EfficientNet_B1_Weights.DEFAULT
+        )
+
+        num_ftrs = model.classifier[1].in_features
+        model.classifier[1] = torch.nn.Linear(in_features=num_ftrs, out_features=2)
+
+        return model
 
 
 def train_eval(
@@ -249,22 +274,37 @@ def train_eval(
         mode="max",
         filename="{e_acc:.2f}-{e_tp:.2f}--{e_tn:.2f}",
     )
-    model = create_model()
-
+    model = create_model(isFiltered)
+    if isFiltered:
+        early_stop_callback = EarlyStopping(
+            monitor="e_acc",
+            stopping_threshold=0.98,
+            patience=10,
+            verbose=True,
+            mode="max",
+        )
+    else:
+        early_stop_callback = EarlyStopping(
+            monitor="t_acc",
+            stopping_threshold=0.90,
+            patience=10,
+            verbose=True,
+            mode="max",
+        )
     trainProcessModel = ProcessModel(model, partName, lr, isFiltered)
     trainer1 = pl.Trainer(
         # accumulate_grad_batches=10,
-        default_root_dir=f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/",
+        default_root_dir=f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_v2_logs/",
         max_epochs=train_epoch,
         accelerator="gpu",
         devices=1,
-        check_val_every_n_epoch=5,
+        check_val_every_n_epoch=1 if isFiltered else 5,
         num_sanity_val_steps=0,
         benchmark=True,
         precision=16,
         # logger=logger,
         log_every_n_steps=50,
-        callbacks=[checkpoint_callback],
+        callbacks=[checkpoint_callback, early_stop_callback],
         detect_anomaly=False,
         # limit_train_batches=1,
         # limit_val_batches=1,
@@ -287,10 +327,14 @@ def train_eval(
     return outputPredFile
 
 
-def get_dataloader(y_train, y_eval, y_test, targetName, img_dir):
-    batchSize = 20
+def get_dataloader(y_train, y_eval, y_test, targetName, img_dir, isFiltered):
+    if isFiltered:
+        batchSize = 30
+    else:
+
+        batchSize = 60
     trainCPUWorker = 8
-    imgSize = 640
+    imgSize = 480
     trainTransform = A.Compose(
         [
             A.LongestMaxSize(imgSize),
@@ -299,11 +343,14 @@ def get_dataloader(y_train, y_eval, y_test, targetName, img_dir):
                 min_width=imgSize,
                 border_mode=0,
             ),
-            A.ColorJitter(p=0.5),
+            A.ColorJitter(p=0.5, brightness=0.8, saturation=0.8, hue=0.5, contrast=0.8),
+            A.Rotate(limit=180, border_mode=0, p=0.3),
+            A.RandomGridShuffle(grid=(2, 2), p=0.3),
+            A.Normalize(mean=[0, 0, 0], std=[1, 1, 1]),
             # A.Rotate(border_mode=0, p=0.2),
-            # A.GaussianBlur(blur_limit=(1, 5), p=0.2),
-            # A.Downscale(scale_min=0.7, scale_max=0.8, p=0.2),
-            A.Normalize(),
+            # A.GaussianBlur(blur_limit=(3, 5), p=0.2),
+            # A.Downscale(scale_min=0.6, scale_max=0.8, p=0.2),
+            # A.Normalize(),
             ToTensorV2(),
         ]
     )
@@ -315,7 +362,8 @@ def get_dataloader(y_train, y_eval, y_test, targetName, img_dir):
                 min_width=imgSize,
                 border_mode=0,
             ),
-            A.Normalize(),
+            A.Normalize(mean=[0, 0, 0], std=[1, 1, 1]),
+            # A.Normalize(),
             ToTensorV2(),
         ]
     )
@@ -371,14 +419,14 @@ def gen_test_label_df(df: pd.DataFrame, targetCols: str, scopeCaseDf: pd.DataFra
         .reset_index()
         .rename(columns={"CaseID": "count"})
         .sort_values(by="count", ascending=False)
-        .head(100)
+        .head(150)
     )
     # print(modelTypeLabelDf[["Model", "Vehicle_Type"]].value_counts())
     df = (
         df[df["Model"].isin(modelTypeLabelDf["Model"].unique().tolist())]
         .sample(frac=1)
         .groupby([targetCols, "Model"])
-        .head(15)
+        .head(20)
     )
     print(df[targetCols].value_counts())
     print(f"Train Eval set : {len(df)}")
@@ -415,7 +463,7 @@ def fit_clean(
     y_eval["CaseID"] = X_eval["CaseID"]
     y_test = testDf[[targetCols, "filename", "CaseID"]]
     trainLoader, valLoader, testLoader = get_dataloader(
-        y_train, y_eval, y_test, partName, imgDir
+        y_train, y_eval, y_test, partName, imgDir, isFiltered=False
     )
 
     origPredFile = train_eval(
@@ -425,13 +473,15 @@ def fit_clean(
         viewPartId,
         5e-2,
         isFiltered=False,
-        train_epoch=10,
+        train_epoch=20,
     )
     aumCsv = "/".join(origPredFile.split("/")[:-1]) + "/aum_values.csv"
     selectedSamplesCsv = clean_dataset_and_eval(
         origPredFile, aumCsv, selectSamples=True
     )
     selectedSamplesDf = pd.read_csv(selectedSamplesCsv)
+    selectedSamplesDf = selectedSamplesDf.sample(frac=1).groupby("gt").head(2000)
+    print(selectedSamplesDf["gt"].value_counts().reset_index())
     beforeRemove = len(df)
     df = df[df["filename"].isin(selectedSamplesDf["filename"].unique().tolist())]
     afterRemove = len(df)
@@ -441,7 +491,7 @@ def fit_clean(
         df[["filename", "CaseID"]],
         df[targetCols],
         stratify=df[targetCols],
-        test_size=0.1,
+        test_size=0.2,
     )
     y_train = y_train.to_frame()
     y_eval = y_eval.to_frame()
@@ -451,7 +501,7 @@ def fit_clean(
     y_eval["filename"] = X_eval["filename"]
     y_eval["CaseID"] = X_eval["CaseID"]
     trainLoader, valLoader, testLoader = get_dataloader(
-        y_train, y_eval, y_test, partName, imgDir
+        y_train, y_eval, y_test, partName, imgDir, isFiltered=True
     )
     cleanPredFile = train_eval(
         trainLoader,
@@ -460,7 +510,7 @@ def fit_clean(
         viewPartId,
         1e-3,
         isFiltered=True,
-        train_epoch=10,
+        train_epoch=30,
     )
     cleanAumCsv = "/".join(cleanPredFile.split("/")[:-1]) + "/aum_values.csv"
 
@@ -484,9 +534,9 @@ def train_original(partName: str):
         dataset=True,
         columns=["CaseID", "Vehicle_Type", "Model"],
     )
-    print(scopeCaseDf.columns)
+    # print(scopeCaseDf.columns)
     # allLocalFiles = [x.split("/")[-1] for x in glob.glob(f"{imgDir}/**.JPG")]
-    print(ddff.columns)
+    # print(ddff.columns)
     for labelFile in allViewFilesByPart:
         # labelFile = f"/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/{partName2}_Rear View_img_labels.csv"
         # df = pd.read_csv(labelFile)
@@ -498,25 +548,27 @@ def train_original(partName: str):
 
 
 if __name__ == "__main__":
+    wr.config.s3_endpoint_url = "http://192.168.1.4:8333"
+
     allParts = [
+        "vision_bumper_rear",
+        "vision_fender_front_lh",
+        "vision_fender_front_rh",
+        "vision_headlamp_lh",
+        "vision_headlamp_rh",
+        "vision_grille",
+        "vision_windscreen_front",
+        "vision_windscreen_rear",
+        "vision_tail_lamp_lh",
+        "vision_tail_lamp_rh",
+        "vision_rear_quarter_rh",
+        "vision_rear_quarter_lh",
         "vision_bonnet",
         "vision_bumper_front",
         "vision_engine",
-        "vision_grille",
-        "vision_headlamp_lh",
-        "vision_headlamp_rh",
-        "vision_bumper_rear",
         "vision_front_panel",
-        "vision_fender_front_lh",
-        "vision_fender_front_rh",
-        "vision_rear_quarter_lh",
-        "vision_tail_lamp_lh",
-        "vision_tail_lamp_rh",
-        "vision_windscreen_front",
         "vision_rear_compartment",
         "vision_rear_panel",
-        "vision_rear_quarter_rh",
-        "vision_windscreen_rear",
     ]
     for p in tqdm(allParts):
         # get_labels(p)

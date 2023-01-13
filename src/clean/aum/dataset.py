@@ -39,6 +39,8 @@ class ImageDataset(Dataset):
 
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         sample = self.transform(image=image)
+        # sample["image"] = sample["image"] / 255.0
+
         data = {
             "img": sample["image"],
             "target": labelTensor,
@@ -74,6 +76,8 @@ class PredictionImageDataset(Dataset):
 
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         sample = self.transform(image=image)
+        # sample["image"] = sample["image"] / 255.0
+
         data = {
             "img": sample["image"],
             "target": target,

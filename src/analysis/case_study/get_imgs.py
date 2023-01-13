@@ -26,7 +26,7 @@ def plot(fig, imgNp, viewName, idx):
 src = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/imgs_metadata/**.parquet"
 allCsv = glob.glob(src, recursive=True)
 caseStudyId = pd.read_csv(
-    "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/case_study/case_study_15/case_study_gt.csv"
+    "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/case_study/case_study_16/case_study_gt.csv"
 )["CaseID"].tolist()
 imgSrc = "/home/alextay96/Desktop/new_workspace/DLDataPipeline/data/imgs"
 
@@ -41,7 +41,7 @@ caseStudyFilesDf["filepath"] = caseStudyFilesDf["filename"].apply(
     lambda x: os.path.join(imgSrc, x)
 )
 print(caseStudyFilesDf[["CaseID", "filename", "filepath", "StdDocDesc"]])
-imgSink = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/case_study/case_study_15/imgs"
+imgSink = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/case_study/case_study_16/imgs"
 os.makedirs(imgSink, exist_ok=True)
 for caseId in tqdm(caseStudyFilesDf["CaseID"].unique()):
     allViewImg = caseStudyFilesDf[caseStudyFilesDf["CaseID"] == caseId]

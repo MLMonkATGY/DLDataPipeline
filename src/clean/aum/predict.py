@@ -120,7 +120,7 @@ def download_files():
 
 
 def load_models():
-    search = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_high_resolution_logs/lightning_logs"
+    search = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_v2_logs/lightning_logs"
     allHParams = glob.glob(f"{search}/**/*.yaml", recursive=True)
     allModel = []
     for hparamsFile in tqdm(allHParams):
@@ -129,19 +129,29 @@ def load_models():
             if content["lr"] == 1e-3:
                 modelName = content["part"]
                 modelDir = "/".join(hparamsFile.split("/")[:-1]) + "/checkpoints"
-                print(modelDir)
+                # print(modelDir)
                 modelPath = glob.glob(f"{modelDir}/**.ckpt")
                 allModel.append({"model_path": modelPath, "model_name": modelName})
-                print(allModel)
-    with open("./model_dataset_high_resolutions.json", "w") as f:
+                # print(allModel)
+    with open("./model_dataset_aum_v2.json", "w") as f:
         json.dump(allModel, f)
 
 
-def predict_part(model, dataloader):
-
+def predict_part(model, dataloader, model_name):
+    modelOutDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/aum_v2_model_script"
     model.eval()
     device = torch.device("cuda")
+    # model = torch.jit.trace(model, torch.rand((120, 3, 480, 480)))
+    model = model.half()
     model = model.to(device)
+
+    model = model.to_torchscript(
+        method="trace",
+        example_inputs=torch.rand((200, 3, 480, 480), dtype=torch.float16).to(device),
+        file_path=f"{modelOutDir}/{model_name}",
+    )
+    model = torch.jit.freeze(model)
+    model = torch.jit.optimize_for_inference(model)
     allPredInfo = []
     part = dataloader.dataset.targetName
     view = dataloader.dataset.targetView
@@ -152,10 +162,12 @@ def predict_part(model, dataloader):
     with torch.no_grad():
         for batchId, batch in enumerate(tqdm(dataloader, desc="predict")):
             imgs = batch["img"].to(device)
+            # print(imgs.shape)
             files = batch["filename"]
             vehicleType = batch["vehicleType"]
             vehicleModel = batch["model"]
-            logit = model(imgs)
+            with autocast():
+                logit = model(imgs)
             preds = torch.argmax(logit, dim=1)
             labels = batch["target"].type(torch.uint8).to(device)
             accMetrics.update(preds, labels)
@@ -189,7 +201,7 @@ def predict_part(model, dataloader):
 
 
 def predict_all():
-    with open("./model_dataset_high_resolutions.json", "r") as f:
+    with open("./model_dataset_aum_v2.json", "r") as f:
         allModelAnn = json.load(f)
     filesDf = pd.read_parquet(
         "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/local/local_files_metadata.parquet"
@@ -197,13 +209,13 @@ def predict_all():
 
     evalTransform = A.Compose(
         [
-            A.LongestMaxSize(640),
+            A.LongestMaxSize(480),
             A.PadIfNeeded(
-                min_height=640,
-                min_width=640,
+                min_height=480,
+                min_width=480,
                 border_mode=0,
             ),
-            A.Normalize(),
+            A.Normalize(mean=[0, 0, 0], std=[1, 1, 1]),
             ToTensorV2(),
         ]
     )
@@ -212,10 +224,10 @@ def predict_all():
     img_dir = (
         "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/imgs"
     )
-    outputDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/predict_high_resolutions"
+    outputDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/predict_aum_v2"
     os.makedirs(outputDir, exist_ok=True)
     for i in tqdm(allModelAnn, desc="part_view"):
-        model = create_model()
+        model = create_model(True)
 
         # model = ProcessModel(model, "", 1e-3, False)
         model = ProcessModel.load_from_checkpoint(
@@ -273,17 +285,17 @@ def predict_all():
         evalLoader = DataLoader2(
             ds,
             shuffle=False,
-            batch_size=60,
-            num_workers=10,
+            batch_size=200,
+            num_workers=12,
         )
-        predDf = predict_part(model, evalLoader)
+        predDf = predict_part(model, evalLoader, i["model_name"])
         predOutputFile = f"{targetPart}_{targetView}.parquet"
         predDf.to_parquet(f"{outputDir}/{predOutputFile}")
 
 
 def build_multi_view_multilabel_df():
-    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/predict_high_resolutions"
-    predLabelOutDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/pred_labels_high_resolutions"
+    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/predict_aum_v2"
+    predLabelOutDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/pred_multilabel_aum_v2"
     os.makedirs(predLabelOutDir, exist_ok=True)
     allPredFiles = glob.glob(f"{srcDir}/*.parquet", recursive=True)
     allDf = []
@@ -338,8 +350,8 @@ def build_multi_view_multilabel_df():
 
 
 def sample_label_df():
-    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/pred_labels_high_resolutions"
-    outDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/balance_labels_high_resolutions"
+    srcDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/pred_multilabel_aum_v2"
+    outDir = "/home/alextay96/Desktop/all_workspace/new_workspace/DLDataPipeline/data/build_dataset/balance_multilabel_aum_v2"
     os.makedirs(outDir, exist_ok=True)
     allPredLabelCsv = glob.glob(f"{srcDir}/**.csv", recursive=True)
     for dfCsv in allPredLabelCsv:
@@ -376,8 +388,8 @@ def sample_label_df():
 # get_src_file()
 # download_files()
 
-# load_models()
-# predict_all()
+load_models()
+predict_all()
 build_multi_view_multilabel_df()
 sample_label_df()
 
